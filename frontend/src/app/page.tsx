@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { DiscoveryChat } from "@/components/discovery";
-import { Hero, HighlightBox } from "@/components/layout";
+import { Hero, PaperQuote } from "@/components/layout";
 
 export default function Home() {
 	const router = useRouter();
@@ -25,10 +25,7 @@ export default function Home() {
 				{/* Hero Section */}
 				<div className="mb-8">
 					<Hero />
-					<HighlightBox className="mt-4">
-						A curated directory of the best technical meetups. No noise, just
-						deep cuts.
-					</HighlightBox>
+					<PaperQuote className="mt-6" />
 				</div>
 
 				{/* Discovery Chat */}

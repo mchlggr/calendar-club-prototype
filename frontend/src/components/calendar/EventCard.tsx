@@ -18,10 +18,10 @@ const categoryStyles: Record<EventCategory, string> = {
 };
 
 const categoryBadgeStyles: Record<EventCategory, string> = {
-	meetup: "bg-accent-orange text-white",
-	startup: "bg-brand-green text-white",
-	community: "bg-accent-teal text-white",
-	ai: "bg-accent-blue text-white",
+	meetup: "bg-category-meetup text-white",
+	startup: "bg-category-startup text-white",
+	community: "bg-brand-green text-white",
+	ai: "bg-category-aitech text-white",
 };
 
 function formatTime(date: Date): string {
@@ -70,7 +70,9 @@ export function EventCard({
 			)}
 
 			{/* Time */}
-			<time className="event-time block">{formatTime(event.startTime)}</time>
+			<time className="font-jetbrains block text-xs text-text-secondary">
+				{formatTime(event.startTime)}
+			</time>
 
 			{/* Title */}
 			<h3 className="mt-0.5 line-clamp-2 text-[13px] font-medium text-text-primary">

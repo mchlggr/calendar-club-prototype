@@ -7,19 +7,22 @@
   /* Base theme tokens */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-serif: var(--font-serif);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains);
+  --font-marker: var(--font-marker);
+  --font-instrument: var(--font-instrument);
+  --font-tilt-warp: var(--font-tilt-warp);
 
   /* Calendar Club Design System Colors */
-  --color-brand-green: #2D6A4F;
-  --color-accent-orange: #E76F51;
-  --color-accent-yellow: #F4D35E;
-  --color-accent-teal: #2A9D8F;
-  --color-accent-blue: #457B9D;
+  --color-brand-green: #047857;
+  --color-recording-red: #DC2626;
+  --color-paper-yellow: #FDE047;
+  --color-category-meetup: #F97316;
+  --color-category-aitech: #3B82F6;
+  --color-category-startup: #FB923C;
   --color-text-primary: #1D3557;
   --color-text-secondary: #6B7280;
-  --color-bg-cream: #FDFBF7;
+  --color-bg-cream: #FBF8F3;
   --color-border-light: #E5E7EB;
   --color-grid-dots: #D1D5DB;
 
@@ -164,24 +167,54 @@
 
   /* Yellow highlight box with shadow */
   .highlight-box {
-    background-color: var(--color-accent-yellow);
+    background-color: var(--color-paper-yellow);
     box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.15);
     padding: 0.5rem 1rem;
     border-radius: 2px;
   }
 
+  /* Yellow paper quote - rotated sticky note style */
+  .paper-quote {
+    background-color: var(--color-paper-yellow);
+    transform: rotate(-2deg);
+    padding: 1.5rem 2rem;
+    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.1);
+  }
+
+  /* Tape decoration for featured banner corners */
+  .tape-corner {
+    background-color: rgba(200, 200, 200, 0.6);
+    width: 60px;
+    height: 25px;
+    transform: rotate(45deg);
+  }
+
+  /* Font utilities */
+  .font-marker {
+    font-family: var(--font-marker), cursive;
+  }
+  .font-instrument {
+    font-family: var(--font-instrument), serif;
+  }
+  .font-tilt-warp {
+    font-family: var(--font-tilt-warp), sans-serif;
+  }
+  .font-jetbrains {
+    font-family: var(--font-mono), monospace;
+  }
+
   /* Category tag left border variants */
   .category-border-meetup {
-    border-left: 3px solid var(--color-accent-orange);
+    border-left: 3px solid var(--color-category-meetup);
   }
   .category-border-startup {
-    border-left: 3px solid var(--color-brand-green);
+    border-left: 3px solid var(--color-category-startup);
   }
   .category-border-community {
-    border-left: 3px solid var(--color-accent-teal);
+    border-left: 3px solid var(--color-brand-green);
   }
   .category-border-ai {
-    border-left: 3px solid var(--color-accent-blue);
+    border-left: 3px solid var(--color-category-aitech);
   }
 
   /* Uppercase tracking for headers */

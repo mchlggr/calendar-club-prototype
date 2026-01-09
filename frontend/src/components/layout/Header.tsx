@@ -8,57 +8,57 @@ export function Header({ className }: HeaderProps) {
 	return (
 		<header
 			className={cn(
-				"flex w-full items-center justify-between px-6 py-4 md:px-12",
+				"flex w-full items-center justify-between px-6 py-6 md:px-12",
 				className,
 			)}
 		>
-			{/* Logo */}
+			{/* Logo - Green badge with Tilt Warp font */}
 			<div className="flex items-center">
-				<div className="rounded-lg bg-brand-green px-4 py-2">
-					<span className="text-lg font-semibold text-white">
+				<div className="rounded-lg bg-brand-green px-5 py-3 shadow-md">
+					<span className="font-tilt-warp text-xl text-white tracking-wide">
 						Calendar Club
 					</span>
 				</div>
 			</div>
 
 			{/* Navigation */}
-			<nav className="flex items-center gap-6">
-				<div className="hidden items-center gap-4 rounded-full bg-white px-4 py-2 shadow-sm sm:flex">
+			<nav className="flex items-center gap-4">
+				<div className="flex items-center gap-4 rounded-full border border-border-light bg-white px-5 py-2.5 shadow-sm">
 					<a
 						href="/login"
-						className="text-sm font-medium uppercase tracking-wide text-text-primary transition-colors hover:text-brand-green"
+						className="text-sm font-medium uppercase tracking-wider text-text-primary transition-colors hover:text-brand-green"
 					>
 						Login
 					</a>
 					<span className="text-border-light">|</span>
 					<a
 						href="/subscribe"
-						className="text-sm font-medium uppercase tracking-wide text-text-primary transition-colors hover:text-brand-green"
+						className="text-sm font-medium uppercase tracking-wider text-text-primary transition-colors hover:text-brand-green"
 					>
 						Subscribe
 					</a>
-				</div>
-				{/* Mobile menu button */}
-				<button
-					type="button"
-					className="flex h-10 w-10 items-center justify-center rounded-lg text-text-primary transition-colors hover:bg-bg-cream sm:hidden"
-					aria-label="Open menu"
-				>
-					<svg
-						className="h-6 w-6"
-						fill="none"
-						stroke="currentColor"
-						viewBox="0 0 24 24"
-						aria-hidden="true"
+					{/* Hamburger menu icon */}
+					<button
+						type="button"
+						className="ml-2 flex h-6 w-6 items-center justify-center text-text-primary transition-colors hover:text-brand-green"
+						aria-label="Open menu"
 					>
-						<path
-							strokeLinecap="round"
-							strokeLinejoin="round"
-							strokeWidth={2}
-							d="M4 6h16M4 12h16M4 18h16"
-						/>
-					</svg>
-				</button>
+						<svg
+							className="h-5 w-5"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+							aria-hidden="true"
+						>
+							<path
+								strokeLinecap="round"
+								strokeLinejoin="round"
+								strokeWidth={2}
+								d="M4 6h16M4 12h16M4 18h16"
+							/>
+						</svg>
+					</button>
+				</div>
 			</nav>
 		</header>
 	);
