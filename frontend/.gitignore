@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# re-include src/lib (parent gitignore has lib/)
+!src/lib/
