@@ -7,20 +7,15 @@ interface HeroProps {
 export function Hero({ className }: HeroProps) {
 	return (
 		<div className={cn("flex flex-col gap-6", className)}>
-			{/* Headline with red recording dot */}
+			{/* Headline with orange dot accent */}
 			<div className="flex items-start gap-3">
-				{/* Red recording dot */}
-				<div className="mt-4 h-3.5 w-3.5 flex-shrink-0 rounded-full bg-recording-red" />
+				{/* Orange dot accent */}
+				<div className="mt-3 h-4 w-4 flex-shrink-0 rounded-full border-2 border-text-primary bg-accent-orange" />
 
 				{/* Headline text */}
-				<h1 className="leading-tight">
-					<span className="font-marker text-4xl italic text-brand-green md:text-5xl lg:text-6xl">
-						Tune into
-					</span>
-					<br />
-					<span className="font-instrument text-5xl text-text-primary md:text-6xl lg:text-7xl">
-						the signal.
-					</span>
+				<h1 className="cc-h1 text-text-primary">
+					<span className="hero-accent block">Tune into</span>
+					<span className="hero-emphasis block">the signal.</span>
 				</h1>
 			</div>
 		</div>

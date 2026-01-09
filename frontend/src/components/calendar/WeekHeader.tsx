@@ -57,7 +57,7 @@ export function WeekHeader({ weekStart, className }: WeekHeaderProps) {
 							)}
 							<span
 								className={cn(
-									"font-serif text-2xl leading-none",
+									"cc-date-number",
 									weekend ? "text-accent-orange" : "text-text-primary",
 								)}
 							>

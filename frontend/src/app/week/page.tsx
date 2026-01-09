@@ -70,11 +70,11 @@ export default function WeekPage() {
 					<button
 						type="button"
 						onClick={handlePrevWeek}
-						className="btn-brutal bg-bg-white px-4 py-2 font-mono text-xs font-bold uppercase tracking-widest text-text-primary hover:bg-accent-yellow/30"
+						className="btn-brutal cc-btn-secondary hover:bg-accent-yellow/30"
 					>
 						Previous Week
 					</button>
-					<h1 className="font-serif text-2xl text-text-primary">
+					<h1 className="cc-h2 text-text-primary">
 						Week of{" "}
 						{weekStart.toLocaleDateString("en-US", {
 							month: "long",
@@ -85,7 +85,7 @@ export default function WeekPage() {
 					<button
 						type="button"
 						onClick={handleNextWeek}
-						className="btn-brutal bg-bg-white px-4 py-2 font-mono text-xs font-bold uppercase tracking-widest text-text-primary hover:bg-accent-yellow/30"
+						className="btn-brutal cc-btn-secondary hover:bg-accent-yellow/30"
 					>
 						Next Week
 					</button>

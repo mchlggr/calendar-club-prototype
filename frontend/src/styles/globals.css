@@ -8,23 +8,22 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-inter);
-  --font-mono: var(--font-jetbrains);
-  --font-marker: var(--font-marker);
-  --font-instrument: var(--font-instrument);
-  --font-tilt-warp: var(--font-tilt-warp);
+  --font-mono: var(--font-jetbrains-mono);
+  --font-serif: var(--font-instrument-serif);
 
   /* Calendar Club Design System Colors */
-  --color-brand-green: #047857;
-  --color-recording-red: #DC2626;
-  --color-paper-yellow: #FDE047;
-  --color-category-meetup: #F97316;
-  --color-category-aitech: #3B82F6;
-  --color-category-startup: #FB923C;
-  --color-text-primary: #1D3557;
-  --color-text-secondary: #6B7280;
-  --color-bg-cream: #FBF8F3;
-  --color-border-light: #E5E7EB;
-  --color-grid-dots: #D1D5DB;
+  --color-brand-green: #137a4d;
+  --color-brand-100: #dff2e9;
+  --color-accent-orange: #ff7e36;
+  --color-accent-yellow: #ffcf40;
+  --color-accent-teal: #2A9D8F;
+  --color-accent-blue: #4dabf7;
+  --color-text-primary: #111111;
+  --color-text-secondary: #444444;
+  --color-bg-cream: #f7f5f0;
+  --color-bg-white: #ffffff;
+  --color-border-light: #dcd9d2;
+  --color-grid-dots: #d4d1cb;
 
   /* Sidebar tokens */
   --color-sidebar-ring: var(--sidebar-ring);
@@ -73,8 +72,13 @@
 
 :root {
   --radius: 0.625rem;
-  /* Typography - Serif for hero accents */
-  --font-serif: Georgia, "Times New Roman", serif;
+  /* Typography fallbacks (next/font sets these on <body> via CSS vars) */
+  --font-inter: ui-sans-serif, system-ui, sans-serif;
+  --font-jetbrains-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  --font-instrument-serif: Georgia, "Times New Roman", serif;
+  --font-logo: ui-sans-serif, system-ui, sans-serif;
+  --font-hand: ui-sans-serif, system-ui, sans-serif;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -153,6 +157,34 @@
 
 /* Calendar Club Visual Motifs */
 @layer utilities {
+  /* Brand fonts */
+  .font-logo {
+    font-family: var(--font-logo);
+  }
+
+  .font-hand {
+    font-family: var(--font-hand);
+  }
+
+  /* Dot grid background for the overall page */
+  .bg-page {
+    background-color: var(--color-bg-cream);
+    background-image: radial-gradient(
+      circle,
+      var(--color-grid-dots) 1.5px,
+      transparent 1.5px
+    );
+    background-size: 24px 24px;
+  }
+
+  /* Graph paper background for calendar “sheets” */
+  .bg-grid-paper {
+    background-color: var(--color-bg-white);
+    background-image: linear-gradient(rgba(0, 0, 0, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 0, 0, 0.06) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+
   /* Notebook grid pattern - subtle dotted background */
   .bg-notebook-grid {
     background-image: radial-gradient(circle, var(--color-grid-dots) 1px, transparent 1px);
@@ -161,60 +193,354 @@
 
   /* Tape/sticker aesthetic - slight rotation for playful callouts */
   .tape-accent {
-    transform: rotate(-2deg);
+    rotate: var(--cc-rotate, -2deg);
     box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Translucent tape strip */
+  .tape {
+    background-color: rgba(255, 255, 255, 0.6);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(2px);
   }
 
   /* Yellow highlight box with shadow */
   .highlight-box {
-    background-color: var(--color-paper-yellow);
-    box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.15);
+    background-color: var(--color-accent-yellow);
+    border: 2px solid var(--color-text-primary);
+    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.18);
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+  }
+
+  /* Small, punchy label style (used for month indicators and tiny UI labels) */
+  .tagline {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-text-primary);
+  }
+
+  /* Handwritten quote text inside highlight boxes */
+  .highlight-quote {
+    font-family: var(--font-hand);
+    font-size: 18px;
+    line-height: 1.35;
+    color: var(--color-text-primary);
+  }
+
+  /* Calendar Club: typography roles */
+  .cc-h1 {
+    font-family: var(--font-serif);
+    font-size: clamp(3rem, 7vw, 4.5rem);
+    line-height: 0.9;
+    letter-spacing: -0.02em;
+  }
+
+  .cc-h2 {
+    font-family: var(--font-serif);
+    font-size: clamp(1.5rem, 2.2vw, 2.05rem);
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+  }
+
+  .cc-h3 {
+    font-family: var(--font-serif);
+    font-size: 1.25rem;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+  }
+
+  .cc-body {
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  .cc-body-sm {
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    line-height: 1.45;
+  }
+
+  .cc-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .cc-label-muted {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+  }
+
+  /* Calendar Club: scrapbook primitives */
+  .cc-inset-grid {
+    background-image: radial-gradient(circle, var(--color-grid-dots) 1px, transparent 1px);
+    background-size: 20px 20px;
+    background-color: color-mix(in oklab, white 65%, transparent);
+    border: 1px solid color-mix(in oklab, var(--color-text-primary) 20%, transparent);
+    border-radius: 8px;
+  }
+
+  .cc-bubble {
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+  }
+
+  .cc-bubble-agent {
+    border-left: 4px solid var(--color-brand-green);
+    background-color: var(--color-bg-white);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.08);
+  }
+
+  .cc-bubble-user {
+    border-left: 4px solid var(--color-accent-orange);
+    background-color: var(--color-bg-cream);
+  }
+
+  .cc-avatar {
+    display: flex;
+    height: 2rem;
+    width: 2rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    background-color: var(--color-brand-green);
+    border: 2px solid var(--color-text-primary);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.12);
+  }
+
+  .cc-avatar-text {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #ffffff;
+  }
+
+  .cc-input {
+    background-color: var(--color-bg-white);
+    border: 2px solid var(--color-text-primary);
+    border-radius: 10px;
+    box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.12);
+    color: var(--color-text-primary);
+  }
+
+  .cc-chip {
+    background-color: var(--color-bg-cream);
+    border: 2px solid var(--color-text-primary);
+    border-radius: 9999px;
     padding: 0.5rem 1rem;
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    transition: background-color 0.15s ease-out;
+  }
+
+  .cc-chip:hover {
+    background-color: var(--color-accent-yellow);
+  }
+
+  .cc-chip-selected {
+    background-color: var(--color-accent-yellow);
+  }
+
+  .cc-btn-primary {
+    background-color: var(--color-brand-green);
+    color: #ffffff;
+    padding: 0.5rem 1rem;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .cc-btn-secondary {
+    background-color: var(--color-bg-white);
+    color: var(--color-text-primary);
+    padding: 0.5rem 1rem;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .cc-btn-icon {
+    background-color: var(--color-bg-white);
+    color: var(--color-text-primary);
+    padding: 0.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .cc-date-number {
+    font-family: var(--font-serif);
+    font-size: 1.5rem;
+    line-height: 1;
+  }
+
+  /* Hero typography hooks */
+  .hero-accent {
+    color: var(--color-brand-green);
+    font-style: italic;
+  }
+
+  .hero-emphasis {
+    color: var(--color-text-primary);
+  }
+
+  /* Week/day header typography */
+  .day-header {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: color-mix(in oklab, var(--color-text-primary) 70%, white);
+  }
+
+  /* Event card time pill text */
+  .event-time {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: color-mix(in oklab, var(--color-text-primary) 70%, white);
+  }
+
+  /* Sticker-like event cards */
+  .event-sticker {
+    position: relative;
+    rotate: var(--cc-rotate, 0deg);
+    transition: box-shadow 0.15s ease-out, scale 0.15s ease-out;
+  }
+
+  .event-sticker:hover {
+    scale: 1.03;
+    box-shadow: 8px 8px 0 rgba(0, 0, 0, 0.18);
+    z-index: 20;
+  }
+
+  .event-tape {
+    position: absolute;
+    top: -8px;
+    left: 50%;
+    translate: -50% 0;
+    width: 44px;
+    height: 12px;
     border-radius: 2px;
+    opacity: 0.85;
   }
 
-  /* Yellow paper quote - rotated sticky note style */
-  .paper-quote {
-    background-color: var(--color-paper-yellow);
-    transform: rotate(-2deg);
-    padding: 1.5rem 2rem;
-    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.1);
+  .event-time-pill {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-text-primary);
+    background-color: rgba(0, 0, 0, 0.04);
+    padding: 2px 6px;
+    border-radius: 4px;
   }
 
-  /* Tape decoration for featured banner corners */
-  .tape-corner {
-    background-color: rgba(200, 200, 200, 0.6);
-    width: 60px;
-    height: 25px;
-    transform: rotate(45deg);
+  .event-badge {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #ffffff;
+    padding: 2px 6px;
+    border-radius: 4px;
   }
 
-  /* Font utilities */
-  .font-marker {
-    font-family: var(--font-marker), cursive;
+  /* Scrapbook surface primitives */
+  .paper-card {
+    background-color: var(--color-bg-white);
+    border: 2px solid var(--color-text-primary);
+    border-radius: 10px;
+    box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.14);
   }
-  .font-instrument {
-    font-family: var(--font-instrument), serif;
+
+  .sticker-pill {
+    background-color: var(--color-brand-green);
+    border: 2px solid var(--color-text-primary);
+    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35);
+    border-radius: 6px;
+    color: #ffffff;
   }
-  .font-tilt-warp {
-    font-family: var(--font-tilt-warp), sans-serif;
+
+  .btn-brutal {
+    border: 2px solid var(--color-text-primary);
+    border-radius: 10px;
+    box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.25);
+    transition: transform 0.15s ease-out, box-shadow 0.15s ease-out,
+      background-color 0.15s ease-out, color 0.15s ease-out;
   }
-  .font-jetbrains {
-    font-family: var(--font-mono), monospace;
+
+  .btn-brutal:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 5px 5px 0 rgba(0, 0, 0, 0.25);
   }
 
   /* Category tag left border variants */
   .category-border-meetup {
-    border-left: 3px solid var(--color-category-meetup);
+    border-left: 3px solid var(--color-accent-orange);
   }
   .category-border-startup {
-    border-left: 3px solid var(--color-category-startup);
-  }
-  .category-border-community {
     border-left: 3px solid var(--color-brand-green);
   }
+  .category-border-community {
+    border-left: 3px solid var(--color-accent-teal);
+  }
   .category-border-ai {
-    border-left: 3px solid var(--color-category-aitech);
+    border-left: 3px solid var(--color-accent-blue);
+  }
+
+  /* Event card category styling hooks (used by EventCard.tsx mapping) */
+  .category-meetup {
+    border-left: 4px solid var(--color-accent-orange);
+  }
+  .category-startup {
+    border-left: 4px solid var(--color-brand-green);
+  }
+  .category-community {
+    border-left: 4px solid var(--color-accent-teal);
+  }
+  .category-ai {
+    border-left: 4px solid var(--color-accent-blue);
+  }
+
+  /* Calendar day column states */
+  .weekend-column {
+    background-color: color-mix(in oklab, var(--color-accent-yellow) 12%, white);
+  }
+
+  .today-column {
+    outline: 2px solid var(--color-accent-orange);
+    outline-offset: -2px;
+    background-color: color-mix(in oklab, var(--color-accent-yellow) 8%, white);
+  }
+
+  .density-high {
+    gap: 0.375rem;
   }
 
   /* Uppercase tracking for headers */

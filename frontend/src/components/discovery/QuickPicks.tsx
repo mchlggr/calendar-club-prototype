@@ -36,12 +36,7 @@ export function QuickPicks({
 						key={option.value}
 						type="button"
 						onClick={() => onSelect(option.value)}
-						className={cn(
-							"rounded-2xl px-4 py-2 text-sm font-medium transition-colors",
-							isSelected
-								? "bg-accent-yellow text-text-primary"
-								: "bg-bg-cream text-text-primary hover:bg-accent-yellow",
-						)}
+						className={cn("cc-chip", isSelected && "cc-chip-selected")}
 					>
 						{option.label}
 					</button>
