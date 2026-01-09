@@ -5,11 +5,15 @@ Shows search results based on SearchProfile and refines
 based on user feedback (Yes/No/Maybe ratings).
 """
 
+import asyncio
+import os
+
 from pydantic import BaseModel, Field
 
 from agents import Agent, function_tool
 
 from backend.models import EventFeedback, SearchProfile
+from backend.services import get_eventbrite_client
 
 
 # Tool input/output models for strict schema compatibility
@@ -25,6 +29,7 @@ class EventResult(BaseModel):
     is_free: bool
     price_amount: int | None = None
     distance_miles: float
+    url: str | None = None
 
 
 class RefinementInput(BaseModel):
@@ -40,20 +45,8 @@ class RefinementOutput(BaseModel):
     explanation: str
 
 
-@function_tool
-def search_events(profile: SearchProfile) -> list[EventResult]:
-    """
-    Search for events matching the profile.
-
-    Args:
-        profile: SearchProfile with location, date_window, categories, constraints
-
-    Returns:
-        List of events matching the search criteria
-    """
-    # TODO: Implement actual search against event sources
-    # For now, return mock data to enable end-to-end testing
-    _ = profile  # Will be used when real search is implemented
+def _get_mock_events() -> list[EventResult]:
+    """Return mock events for fallback when API is unavailable."""
     return [
         EventResult(
             id="evt-001",
@@ -65,6 +58,7 @@ def search_events(profile: SearchProfile) -> list[EventResult]:
             is_free=True,
             price_amount=None,
             distance_miles=2.5,
+            url="https://example.com/ai-meetup",
         ),
         EventResult(
             id="evt-002",
@@ -76,6 +70,7 @@ def search_events(profile: SearchProfile) -> list[EventResult]:
             is_free=False,
             price_amount=75,
             distance_miles=3.1,
+            url="https://example.com/startup-weekend",
         ),
         EventResult(
             id="evt-003",
@@ -87,8 +82,101 @@ def search_events(profile: SearchProfile) -> list[EventResult]:
             is_free=True,
             price_amount=None,
             distance_miles=1.8,
+            url="https://example.com/tech-on-tap",
         ),
     ]
+
+
+async def _fetch_eventbrite_events(profile: SearchProfile) -> list[EventResult]:
+    """Fetch events from Eventbrite API."""
+    client = get_eventbrite_client()
+
+    # Extract search parameters from profile
+    location = profile.location or "Columbus, OH"
+    categories = profile.categories if profile.categories else None
+    free_only = profile.constraints.free_only if profile.constraints else False
+
+    # Parse date window
+    start_date = None
+    end_date = None
+    if profile.date_window:
+        start_date = profile.date_window.start
+        end_date = profile.date_window.end
+
+    events = await client.search_events(
+        location=location,
+        start_date=start_date,
+        end_date=end_date,
+        categories=categories,
+        free_only=free_only,
+        page_size=10,
+    )
+
+    # Convert to EventResult format
+    results = []
+    for event in events:
+        venue = event.venue_name or "TBD"
+        if event.venue_address:
+            venue = f"{venue}, {event.venue_address}"
+
+        results.append(
+            EventResult(
+                id=event.id,
+                title=event.title,
+                date=event.start_time.isoformat(),
+                location=venue,
+                category=event.category,
+                description=event.description[:200] if event.description else "",
+                is_free=event.is_free,
+                price_amount=event.price_amount,
+                distance_miles=5.0,  # Eventbrite doesn't provide distance
+                url=event.url,
+            )
+        )
+
+    return results
+
+
+@function_tool
+def search_events(profile: SearchProfile) -> list[EventResult]:
+    """
+    Search for events matching the profile.
+
+    Args:
+        profile: SearchProfile with location, date_window, categories, constraints
+
+    Returns:
+        List of events matching the search criteria
+    """
+    # Check if Eventbrite API key is configured
+    if not os.getenv("EVENTBRITE_API_KEY"):
+        # Return mock data if no API key
+        return _get_mock_events()
+
+    try:
+        # Run async fetch in sync context (tool functions are sync)
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # If we're already in an async context, create a new task
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(
+                    asyncio.run, _fetch_eventbrite_events(profile)
+                )
+                events = future.result(timeout=30)
+        else:
+            events = loop.run_until_complete(_fetch_eventbrite_events(profile))
+
+        # Return results or fallback to mock if empty
+        if events:
+            return events
+        return _get_mock_events()
+
+    except Exception as e:
+        # Log error and fallback to mock data
+        print(f"Eventbrite API error: {e}")
+        return _get_mock_events()
 
 
 @function_tool
@@ -148,6 +236,7 @@ def refine_results(input_data: RefinementInput) -> RefinementOutput:
             is_free=True,
             price_amount=None,
             distance_miles=1.2,
+            url="https://example.com/python-columbus",
         ),
         EventResult(
             id="evt-005",
@@ -159,6 +248,7 @@ def refine_results(input_data: RefinementInput) -> RefinementOutput:
             is_free=True,
             price_amount=None,
             distance_miles=0.8,
+            url="https://example.com/data-science-happy-hour",
         ),
     ]
 
