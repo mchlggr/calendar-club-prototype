@@ -1,11 +1,13 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from openai import OpenAI
 import os
 import json
 from dotenv import load_dotenv
+
+from api.services import CalendarEvent, create_ics_event, create_ics_multiple
 
 load_dotenv()
 
@@ -111,4 +113,36 @@ def chat_stream(request: ChatStreamRequest):
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
+    )
+
+
+class ExportEventsRequest(BaseModel):
+    events: list[CalendarEvent]
+
+
+@app.post("/api/calendar/export")
+def export_calendar(event: CalendarEvent):
+    """Export a single event as ICS file."""
+    ics_content = create_ics_event(event)
+    filename = f"{event.title.replace(' ', '-').lower()}.ics"
+
+    return Response(
+        content=ics_content,
+        media_type="text/calendar",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/api/calendar/export-multiple")
+def export_calendar_multiple(request: ExportEventsRequest):
+    """Export multiple events as a single ICS file."""
+    if not request.events:
+        raise HTTPException(status_code=400, detail="No events provided")
+
+    ics_content = create_ics_multiple(request.events)
+
+    return Response(
+        content=ics_content,
+        media_type="text/calendar",
+        headers={"Content-Disposition": 'attachment; filename="calendar-club-events.ics"'},
     )

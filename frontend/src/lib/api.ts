@@ -396,6 +396,86 @@ export const api = {
 		const data = await response.json();
 		return parseDates(data) as unknown as SearchResponse;
 	},
+
+	/**
+	 * POST /api/calendar/export - Export a single event as ICS file
+	 */
+	async exportEvent(event: CalendarEvent): Promise<void> {
+		const baseUrl = getBaseUrl();
+		const response = await fetch(`${baseUrl}/api/calendar/export`, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				title: event.title,
+				start: event.startTime.toISOString(),
+				end: event.endTime?.toISOString(),
+				description: event.description,
+				location: event.location,
+				url: event.url || event.sourceUrl,
+			}),
+		});
+
+		if (!response.ok) {
+			throw new ApiError(
+				`Export failed with status ${response.status}`,
+				response.status,
+			);
+		}
+
+		// Download the ICS file
+		const blob = await response.blob();
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement("a");
+		a.href = url;
+		a.download = `${event.title.replace(/\s+/g, "-").toLowerCase()}.ics`;
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		URL.revokeObjectURL(url);
+	},
+
+	/**
+	 * POST /api/calendar/export-multiple - Export multiple events as ICS file
+	 */
+	async exportEvents(events: CalendarEvent[]): Promise<void> {
+		const baseUrl = getBaseUrl();
+		const response = await fetch(`${baseUrl}/api/calendar/export-multiple`, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				events: events.map((event) => ({
+					title: event.title,
+					start: event.startTime.toISOString(),
+					end: event.endTime?.toISOString(),
+					description: event.description,
+					location: event.location,
+					url: event.url || event.sourceUrl,
+				})),
+			}),
+		});
+
+		if (!response.ok) {
+			throw new ApiError(
+				`Export failed with status ${response.status}`,
+				response.status,
+			);
+		}
+
+		// Download the ICS file
+		const blob = await response.blob();
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement("a");
+		a.href = url;
+		a.download = "calendar-club-events.ics";
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		URL.revokeObjectURL(url);
+	},
 };
 
 export default api;
