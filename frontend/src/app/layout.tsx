@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Playfair_Display } from "next/font/google";
 import "@/styles/globals.css";
-import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
-import { QueryProvider } from "@/lib/query-provider";
+import { Header } from "@/components/layout/Header";
 import { TelemetryProvider } from "@/components/TelemetryProvider";
+import { QueryProvider } from "@/lib/query-provider";
 
 const geistSans = Geist({
 	variable: "--font-geist-sans",
