@@ -11,12 +11,17 @@ load_dotenv()
 
 app = FastAPI()
 
-# CORS so the frontend can talk to backend
+# CORS configuration from environment
+ALLOWED_ORIGINS = os.getenv(
+    "CORS_ORIGINS", "http://localhost:3000,http://localhost:3001"
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
 )
 
 def get_openai_client() -> OpenAI:

@@ -1,21 +1,30 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useState } from "react";
+import type { CalendarEvent } from "@/components/calendar";
 import { DiscoveryChat } from "@/components/discovery";
 import { Hero, PaperQuote } from "@/components/layout";
 
 export default function Home() {
 	const router = useRouter();
+	const [discoveredEvents, setDiscoveredEvents] = useState<CalendarEvent[]>([]);
 
 	const handleSearch = (query: unknown) => {
 		console.log("Search:", query);
 	};
 
-	const handleResultsReady = (events: unknown[]) => {
-		console.log("Results ready:", events.length);
+	const handleResultsReady = (events: CalendarEvent[]) => {
+		setDiscoveredEvents(events);
 	};
 
 	const handleViewWeek = () => {
+		if (discoveredEvents.length > 0) {
+			sessionStorage.setItem(
+				"discoveredEvents",
+				JSON.stringify(discoveredEvents),
+			);
+		}
 		router.push("/week");
 	};
 

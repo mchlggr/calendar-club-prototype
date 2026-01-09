@@ -6,6 +6,7 @@ using OpenAI Agents SDK.
 """
 
 import json
+import os
 from typing import AsyncGenerator
 
 from agents import Runner
@@ -23,10 +24,14 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# CORS for local development
+# CORS configuration from environment
+ALLOWED_ORIGINS = os.getenv(
+    "CORS_ORIGINS", "http://localhost:3000,http://localhost:3001"
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

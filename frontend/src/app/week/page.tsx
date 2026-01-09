@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { type CalendarEvent, WeekView } from "@/components/calendar";
 
 function getWeekStart(date: Date): Date {
@@ -11,55 +11,34 @@ function getWeekStart(date: Date): Date {
 	return d;
 }
 
-const mockEvents: CalendarEvent[] = [
-	{
-		id: "1",
-		title: "AI/ML Meetup: Large Language Models",
-		startTime: new Date(Date.now() + 86400000 + 36000000),
-		endTime: new Date(Date.now() + 86400000 + 43200000),
-		category: "ai",
-		venue: "Tech Hub",
-		neighborhood: "Downtown",
-		canonicalUrl: "https://example.com/event/1",
-		sourceId: "meetup-1",
-	},
-	{
-		id: "2",
-		title: "Startup Pitch Night",
-		startTime: new Date(Date.now() + 172800000 + 61200000),
-		endTime: new Date(Date.now() + 172800000 + 72000000),
-		category: "startup",
-		venue: "Innovation Center",
-		neighborhood: "University District",
-		canonicalUrl: "https://example.com/event/2",
-		sourceId: "meetup-2",
-	},
-	{
-		id: "3",
-		title: "Community Tech Talks",
-		startTime: new Date(Date.now() + 259200000 + 32400000),
-		endTime: new Date(Date.now() + 259200000 + 39600000),
-		category: "community",
-		venue: "Public Library",
-		neighborhood: "Midtown",
-		canonicalUrl: "https://example.com/event/3",
-		sourceId: "meetup-3",
-	},
-	{
-		id: "4",
-		title: "React Developer Meetup",
-		startTime: new Date(Date.now() + 345600000 + 64800000),
-		endTime: new Date(Date.now() + 345600000 + 75600000),
-		category: "meetup",
-		venue: "Coworking Space",
-		neighborhood: "East Side",
-		canonicalUrl: "https://example.com/event/4",
-		sourceId: "meetup-4",
-	},
-];
-
 export default function WeekPage() {
 	const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()));
+	const [events, setEvents] = useState<CalendarEvent[]>([]);
+
+	useEffect(() => {
+		const stored = sessionStorage.getItem("discoveredEvents");
+		if (stored) {
+			try {
+				const parsed = JSON.parse(stored);
+				const loadedEvents = parsed.map(
+					(e: Record<string, unknown>): CalendarEvent => {
+						const startTime = new Date(e.startTime as string);
+						const endTime = e.endTime
+							? new Date(e.endTime as string)
+							: new Date(startTime.getTime() + 2 * 60 * 60 * 1000); // Default 2 hours
+						return {
+							...e,
+							startTime,
+							endTime,
+						} as CalendarEvent;
+					},
+				);
+				setEvents(loadedEvents);
+			} catch (error) {
+				console.error("Failed to parse stored events:", error);
+			}
+		}
+	}, []);
 
 	const handlePrevWeek = () => {
 		const prev = new Date(weekStart);
@@ -114,11 +93,20 @@ export default function WeekPage() {
 
 				{/* Week View */}
 				<WeekView
-					events={mockEvents}
+					events={events}
 					weekStart={weekStart}
 					onEventClick={handleEventClick}
 					onEventHover={handleEventHover}
 				/>
+
+				{/* Empty state */}
+				{events.length === 0 && (
+					<div className="mt-8 text-center">
+						<p className="text-text-secondary">
+							No events yet. Use the discovery chat to find events!
+						</p>
+					</div>
+				)}
 			</div>
 		</div>
 	);
