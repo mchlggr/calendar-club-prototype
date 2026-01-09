@@ -42,7 +42,7 @@ To deliver the phased plan now (as requested), I’m proceeding with the followi
 
 ---
 
-# Phased Plan
+<!--# Phased Plan
 
 Below is a phased plan aligned to the flow in **[FLOW-1]** and your product constraints in **[PM-ANS-1]**, while leveraging the proven building blocks in the research docs (schema, dedupe, temporal, hybrid retrieval, etc.). ([DOC-4], [DOC-9], [DOC-14], [DOC-23])
 
@@ -78,11 +78,11 @@ Below is a phased plan aligned to the flow in **[FLOW-1]** and your product cons
 
 ### Non-goals (Phase 0)
 
-* No new sources added here; this is definition + design + measurement contract.
+* No new sources added here; this is definition + design + measurement contract.-->
 
 ---
 
-## Phase 1 — MVP: Search + Clarifying Questions + Week View + Share Link
+<!--## Phase 1 — MVP: Search + Clarifying Questions + Week View + Share Link
 
 **Goal:** Ship the core **consumer discovery experience** end-to-end, consistent with **[FLOW-1]** up through “Calendar returns results,” plus lightweight sharing.
 
@@ -98,9 +98,9 @@ Below is a phased plan aligned to the flow in **[FLOW-1]** and your product cons
   * constraints (free vs paid, distance radius, time-of-day)
 * Output: a structured query profile stored in the user’s profile (even if anonymous session-based initially). ([FLOW-1], [PM-ANS-1])
 
-**Why:** This matches your flow and enables the “deep research” framing without requiring a perfect universal search API.
+**Why:** This matches your flow and enables the “deep research” framing without requiring a perfect universal search API.-->
 
-#### 2) “Results calculated” → “Calendar returns results”
+<!--#### 2) “Results calculated” → “Calendar returns results”
 
 * Results rendered into:
 
@@ -141,8 +141,8 @@ Aligned to what you said:
 * **Searches per user per week**
 * **Return users / retention** (D1/D7-style, even if informal)
 * **Boomerang rate:** % of users who click out to an event and return within a defined window to find more events. ([PM-ANS-1])
-
-### Non-goals (Phase 1)
+-->
+<!--### Non-goals (Phase 1)
 
 * No payment processing (despite [FLOW-1] showing it). You stated free/limited token spend. ([PM-ANS-1], [FLOW-1])
 * No exporting/syncing events *into* external calendars (read-only integration only). ([PM-ANS-1])
@@ -155,10 +155,10 @@ Aligned to what you said:
   **Mitigation:** Define breadth as “coverage of top events in one metro across our three signals,” not “everything.” Use curation + seed sources. ([PM-ANS-1], [DOC-17])
 * **Risk:** Quality issues (duplicates, wrong times).
   **Mitigation:** deterministic dedupe and stable normalization rules first; add a “report issue” link on event cards. ([DOC-9], [DOC-5])
-
+-->
 ---
 
-## Phase 2 — V1: Deep Research Agent + Interactive Rating Loop + More Coverage in the Same Metro
+<!--## Phase 2 — V1: Deep Research Agent + Interactive Rating Loop + More Coverage in the Same Metro
 
 **Goal:** Make the experience feel materially smarter and more complete without changing the core wedge.
 
@@ -216,8 +216,8 @@ So V1 should expand **depth within your metro**, not geography:
 * Still no social graph (co-attendance).
 
 ---
-
-## Phase 3 — V2: Calendar Connection (SSO) + Read-Only Context + Optional Export Later
+-->
+<!--## Phase 3 — V2: Calendar Connection (SSO) + Read-Only Context + Optional Export Later
 
 **Goal:** Match the **“Connect calendar SSO”** step in **[FLOW-1]** in a way that is consistent with your “read-only calendar integration” requirement. ([PM-ANS-1], [FLOW-1])
 
@@ -259,7 +259,7 @@ If you truly do not want any ICS export yet, keep V2 as “calendar context only
 * Payments still optional; you’re prioritizing engagement. ([PM-ANS-1])
 
 ---
-
+-->
 ## Phase 4 — V3: Monetization + Multi-City + Higher-Risk Social Features
 
 **Goal:** Only after you have repeat usage and a clear value signal.
