@@ -17,20 +17,26 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+def get_openai_client() -> OpenAI:
+    """Lazy-initialize OpenAI client to allow server boot without API key."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured")
+    return OpenAI(api_key=api_key)
+
 
 class ChatRequest(BaseModel):
     message: str
+
 
 @app.get("/")
 def root():
     return {"status": "ok"}
 
+
 @app.post("/api/chat")
 def chat(request: ChatRequest):
-    if not os.getenv("OPENAI_API_KEY"):
-        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured")
-    
+    client = get_openai_client()
     try:
         user_message = request.message
         response = client.chat.completions.create(
@@ -41,5 +47,7 @@ def chat(request: ChatRequest):
             ]
         )
         return {"reply": response.choices[0].message.content}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error calling OpenAI API: {str(e)}")
