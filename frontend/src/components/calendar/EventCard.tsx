@@ -10,18 +10,18 @@ interface EventCardProps {
 	className?: string;
 }
 
-const categoryBarStyles: Record<EventCategory, string> = {
-	meetup: "category-bar-meetup",
-	startup: "category-bar-startup",
-	community: "category-bar-community",
-	ai: "category-bar-ai",
+const categoryStyles: Record<EventCategory, string> = {
+	meetup: "category-meetup",
+	startup: "category-startup",
+	community: "category-community",
+	ai: "category-ai",
 };
 
 const categoryBadgeStyles: Record<EventCategory, string> = {
-	meetup: "bg-accent-orange text-white",
-	startup: "bg-brand-green text-white",
-	community: "bg-accent-teal text-white",
-	ai: "bg-accent-blue text-white",
+	meetup: "bg-category-meetup text-white",
+	startup: "bg-category-startup text-white",
+	community: "bg-brand-green text-white",
+	ai: "bg-category-aitech text-white",
 };
 
 function formatTime(date: Date): string {
@@ -48,9 +48,9 @@ export function EventCard({
 		<button
 			type="button"
 			className={cn(
-				"group w-full cursor-pointer rounded-md border border-border-light bg-bg-white p-2 text-left shadow-sm transition-all",
+				"group w-full cursor-pointer rounded-lg border border-border-light bg-bg-white p-2 text-left shadow-sm transition-all",
 				"hover:-translate-y-0.5 hover:shadow-md",
-				categoryBarStyles[event.category],
+				categoryStyles[event.category],
 				className,
 			)}
 			onClick={handleClick}
@@ -69,8 +69,10 @@ export function EventCard({
 				</span>
 			)}
 
-			{/* Time - monospace font */}
-			<time className="time-label block">{formatTime(event.startTime)}</time>
+			{/* Time */}
+			<time className="font-jetbrains block text-xs text-text-secondary">
+				{formatTime(event.startTime)}
+			</time>
 
 			{/* Title */}
 			<h3 className="mt-0.5 line-clamp-2 text-[13px] font-medium text-text-primary">

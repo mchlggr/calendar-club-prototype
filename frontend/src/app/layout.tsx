@@ -24,14 +24,14 @@ const jetbrainsMono = JetBrains_Mono({
 
 const permanentMarker = Permanent_Marker({
 	variable: "--font-marker",
-	weight: "400",
 	subsets: ["latin"],
+	weight: "400",
 });
 
 const instrumentSerif = Instrument_Serif({
 	variable: "--font-instrument",
-	weight: "400",
 	subsets: ["latin"],
+	weight: "400",
 	style: ["normal", "italic"],
 });
 
