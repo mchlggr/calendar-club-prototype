@@ -193,5 +193,9 @@ Looking forward to building with the community! 🙌✨ Here's to many more cre
 
 Who else is diving into the world of AI? Let's connect! 🌐💡
 
-#FirstLLMApp 
+#FirstLLMApp
 ```
+
+## Development Guidelines
+
+**Do NOT stop until all affected tests, lints, builds and typechecks pass.** DO writeback any failures and lessons learned along the way to documentation!

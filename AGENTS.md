@@ -33,6 +33,7 @@ bd sync               # Sync with git
 7. **Hand off** - Provide context for next session
 
 **CRITICAL RULES:**
+- **Do NOT stop until all affected tests, lints, builds and typechecks pass.** DO writeback any failures and lessons learned along the way to documentation!
 - Work is NOT complete until `git push` succeeds
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
