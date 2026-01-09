@@ -20,7 +20,7 @@ export default function Home() {
 	};
 
 	return (
-		<div className="min-h-screen bg-notebook-grid px-6 py-12 md:px-12">
+		<div className="min-h-screen px-6 py-12 md:px-12">
 			<div className="mx-auto max-w-2xl">
 				{/* Hero Section */}
 				<div className="mb-8">

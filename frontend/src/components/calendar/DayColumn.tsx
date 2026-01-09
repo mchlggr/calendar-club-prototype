@@ -23,8 +23,8 @@ export function DayColumn({
 	return (
 		<div
 			className={cn(
-				"flex min-h-[200px] flex-col gap-2 border-r border-border-light p-2 last:border-r-0",
-				isWeekend ? "weekend-column" : "bg-bg-white",
+				"flex min-h-[220px] flex-col gap-2 border-r-2 border-text-primary p-3 last:border-r-0",
+				isWeekend ? "weekend-column" : "bg-transparent",
 				isToday && "today-column",
 				hasHighDensity && "density-high",
 				className,

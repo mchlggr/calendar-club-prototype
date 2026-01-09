@@ -75,7 +75,7 @@ export function EventPeek({ event, anchorRect, className }: EventPeekProps) {
 			ref={peekRef}
 			role="tooltip"
 			className={cn(
-				"fixed z-50 min-w-[200px] max-w-[280px] rounded-lg border border-border-light bg-bg-white p-3 shadow-md",
+				"paper-card fixed z-50 min-w-[200px] max-w-[280px] p-3",
 				"animate-in fade-in-0 zoom-in-95 duration-150",
 				className,
 			)}

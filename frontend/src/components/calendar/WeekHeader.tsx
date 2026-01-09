@@ -30,7 +30,10 @@ export function WeekHeader({ weekStart, className }: WeekHeaderProps) {
 
 	return (
 		<div
-			className={cn("grid grid-cols-7 border-b border-border-light", className)}
+			className={cn(
+				"grid grid-cols-7 border-b-2 border-text-primary",
+				className,
+			)}
 		>
 			{days.map((date, index) => {
 				const isToday = isSameDay(date, today);
@@ -40,8 +43,8 @@ export function WeekHeader({ weekStart, className }: WeekHeaderProps) {
 					<div
 						key={date.toISOString()}
 						className={cn(
-							"flex flex-col items-center py-3",
-							weekend ? "bg-bg-cream" : "bg-bg-white",
+							"flex flex-col items-center border-r-2 border-text-primary py-3 last:border-r-0",
+							weekend ? "weekend-column" : "bg-bg-white",
 						)}
 					>
 						{/* Day label */}
@@ -50,11 +53,11 @@ export function WeekHeader({ weekStart, className }: WeekHeaderProps) {
 						{/* Date number with today indicator */}
 						<div className="mt-1 flex items-center gap-1">
 							{isToday && (
-								<span className="h-2 w-2 rounded-full bg-accent-orange" />
+								<span className="h-2 w-2 rounded-full border border-text-primary bg-accent-orange" />
 							)}
 							<span
 								className={cn(
-									"text-xl font-semibold",
+									"font-serif text-2xl leading-none",
 									weekend ? "text-accent-orange" : "text-text-primary",
 								)}
 							>

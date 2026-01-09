@@ -76,22 +76,22 @@ export function WeekView({
 	});
 
 	return (
-		<div
-			className={cn(
-				"w-full overflow-hidden rounded-lg border border-border-light bg-bg-white shadow-sm",
-				className,
-			)}
-		>
+		<div className={cn("paper-card w-full overflow-hidden", className)}>
 			{/* Month indicator */}
-			<div className="flex items-center border-b border-border-light bg-bg-cream px-4 py-2">
-				<span className="tagline">{formatMonthYear(weekStart)}</span>
+			<div className="flex items-center justify-between border-b-2 border-text-primary bg-bg-white px-4 py-3">
+				<span
+					className="tagline tape-accent inline-flex items-center rounded bg-brand-100 px-2 py-1"
+					style={{ "--cc-rotate": "1deg" } as React.CSSProperties}
+				>
+					{formatMonthYear(weekStart)}
+				</span>
 			</div>
 
 			{/* Week header */}
 			<WeekHeader weekStart={weekStart} />
 
 			{/* Day columns with events */}
-			<div className="grid grid-cols-7 bg-notebook-grid">
+			<div className="grid grid-cols-7 bg-grid-paper">
 				{days.map((date, index) => {
 					const dayEvents = getEventsForDay(events, date);
 					const isCurrentDay = isSameDay(date, today);
@@ -105,7 +105,10 @@ export function WeekView({
 							isWeekend={weekend}
 							isToday={isCurrentDay}
 							eventCount={dayEvents.length}
-							className={cn(isFocused && "ring-2 ring-brand-green")}
+							className={cn(
+								isFocused &&
+									"outline-2 outline-offset-[-2px] outline-brand-green",
+							)}
 						>
 							{dayEvents.map((event) => (
 								<EventCard
