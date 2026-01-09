@@ -84,10 +84,15 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
                     # Agent handoff occurred
                     yield f"data: {json.dumps({'type': 'phase', 'agent': event.new_agent.name})}\n\n"
                 elif event.type == "run_item_stream_event":
-                    # Check for tool calls
-                    if hasattr(event.item, "type") and event.item.type == "tool_call_item":
-                        tool_name = getattr(event.item, "name", "unknown")
-                        yield f"data: {json.dumps({'type': 'action', 'tool': tool_name})}\n\n"
+                    if hasattr(event.item, "type"):
+                        if event.item.type == "tool_call_item":
+                            tool_name = getattr(event.item, "name", "unknown")
+                            yield f"data: {json.dumps({'type': 'action', 'tool': tool_name})}\n\n"
+                        elif event.item.type == "tool_call_output_item":
+                            # Stream the tool output (event results)
+                            output = getattr(event.item, "output", None)
+                            if output:
+                                yield f"data: {json.dumps({'type': 'events', 'data': output})}\n\n"
 
             # Signal completion
             yield f"data: {json.dumps({'type': 'complete'})}\n\n"
