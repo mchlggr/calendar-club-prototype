@@ -1,0 +1,1 @@
+"""Calendar Club backend package."""
