@@ -1,25 +1,43 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Playfair_Display } from "next/font/google";
+import {
+	Instrument_Serif,
+	Inter,
+	JetBrains_Mono,
+	Permanent_Marker,
+	Tilt_Warp,
+} from "next/font/google";
 import "@/styles/globals.css";
 import { Footer } from "@/components/layout/Footer";
 import { Header } from "@/components/layout/Header";
 import { TelemetryProvider } from "@/components/TelemetryProvider";
 import { QueryProvider } from "@/lib/query-provider";
 
-const geistSans = Geist({
-	variable: "--font-geist-sans",
+const inter = Inter({
+	variable: "--font-inter",
 	subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-	variable: "--font-geist-mono",
+const jetbrainsMono = JetBrains_Mono({
+	variable: "--font-jetbrains",
 	subsets: ["latin"],
 });
 
-const playfairSerif = Playfair_Display({
-	variable: "--font-serif",
+const permanentMarker = Permanent_Marker({
+	variable: "--font-marker",
+	weight: "400",
+	subsets: ["latin"],
+});
+
+const instrumentSerif = Instrument_Serif({
+	variable: "--font-instrument",
+	weight: "400",
 	subsets: ["latin"],
 	style: ["normal", "italic"],
+});
+
+const tiltWarp = Tilt_Warp({
+	variable: "--font-tilt-warp",
+	subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
@@ -36,7 +54,7 @@ export default function RootLayout({
 	return (
 		<html lang="en">
 			<body
-				className={`${geistSans.variable} ${geistMono.variable} ${playfairSerif.variable} min-h-screen bg-bg-cream font-sans antialiased`}
+				className={`${inter.variable} ${jetbrainsMono.variable} ${permanentMarker.variable} ${instrumentSerif.variable} ${tiltWarp.variable} min-h-screen bg-bg-cream font-sans antialiased`}
 			>
 				<TelemetryProvider>
 					<QueryProvider>

@@ -7,19 +7,24 @@
   /* Base theme tokens */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-serif: var(--font-serif);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains);
+  --font-serif: var(--font-instrument);
+  --font-marker: var(--font-marker);
+  --font-logo: var(--font-tilt-warp);
 
-  /* Calendar Club Design System Colors */
-  --color-brand-green: #2D6A4F;
-  --color-accent-orange: #E76F51;
-  --color-accent-yellow: #F4D35E;
+  /* Calendar Club Design System Colors - Updated Branding */
+  --color-brand-green: #047857;
+  --color-accent-red: #DC2626;
+  --color-accent-orange: #F97316;
+  --color-accent-yellow: #FDE047;
+  --color-accent-coral: #FB923C;
+  --color-accent-blue: #3B82F6;
   --color-accent-teal: #2A9D8F;
-  --color-accent-blue: #457B9D;
-  --color-text-primary: #1D3557;
+  --color-text-primary: #1a1a1a;
   --color-text-secondary: #6B7280;
-  --color-bg-cream: #FDFBF7;
+  --color-bg-cream: #FAF9F6;
+  --color-bg-white: #FFFFFF;
   --color-border-light: #E5E7EB;
   --color-grid-dots: #D1D5DB;
 
@@ -162,12 +167,30 @@
     box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
   }
 
-  /* Yellow highlight box with shadow */
+  /* Yellow highlight box with shadow - rotated paper effect */
   .highlight-box {
     background-color: var(--color-accent-yellow);
     box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.15);
-    padding: 0.5rem 1rem;
+    padding: 1rem 1.25rem;
     border-radius: 2px;
+    transform: rotate(-1deg);
+  }
+
+  /* Category tag top border variants for week grid */
+  .category-bar-meetup {
+    border-top: 4px solid var(--color-accent-orange);
+  }
+  .category-bar-startup {
+    border-top: 4px solid var(--color-brand-green);
+  }
+  .category-bar-community {
+    border-top: 4px solid var(--color-accent-teal);
+  }
+  .category-bar-ai {
+    border-top: 4px solid var(--color-accent-blue);
+  }
+  .category-bar-coral {
+    border-top: 4px solid var(--color-accent-coral);
   }
 
   /* Category tag left border variants */
@@ -188,5 +211,74 @@
   .tracking-caps {
     text-transform: uppercase;
     letter-spacing: 0.05em;
+  }
+
+  /* Hero typography styles */
+  .hero-accent {
+    font-family: var(--font-marker);
+    color: var(--color-brand-green);
+    font-style: italic;
+  }
+
+  .hero-emphasis {
+    font-family: var(--font-serif);
+    color: var(--color-text-primary);
+  }
+
+  /* Logo text styling */
+  .logo-text {
+    font-family: var(--font-logo);
+  }
+
+  /* Tagline text - used on yellow paper */
+  .tagline {
+    font-family: var(--font-marker);
+    font-size: 0.875rem;
+    letter-spacing: 0.02em;
+  }
+
+  /* Time labels - monospace */
+  .time-label {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+  }
+
+  /* Tape corner decorations */
+  .tape-corner {
+    position: absolute;
+    width: 40px;
+    height: 20px;
+    background: linear-gradient(135deg, rgba(255,255,255,0.4) 0%, rgba(200,200,200,0.3) 100%);
+    opacity: 0.8;
+  }
+  .tape-corner-tl {
+    top: -4px;
+    left: -4px;
+    transform: rotate(-45deg);
+  }
+  .tape-corner-tr {
+    top: -4px;
+    right: -4px;
+    transform: rotate(45deg);
+  }
+  .tape-corner-bl {
+    bottom: -4px;
+    left: -4px;
+    transform: rotate(45deg);
+  }
+  .tape-corner-br {
+    bottom: -4px;
+    right: -4px;
+    transform: rotate(-45deg);
+  }
+
+  /* Starts Here sticker */
+  .sticker {
+    font-family: var(--font-marker);
+    background-color: var(--color-accent-yellow);
+    padding: 0.25rem 0.5rem;
+    transform: rotate(-6deg);
+    box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
   }
 }

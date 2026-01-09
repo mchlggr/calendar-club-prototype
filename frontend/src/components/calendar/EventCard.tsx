@@ -10,11 +10,11 @@ interface EventCardProps {
 	className?: string;
 }
 
-const categoryStyles: Record<EventCategory, string> = {
-	meetup: "category-meetup",
-	startup: "category-startup",
-	community: "category-community",
-	ai: "category-ai",
+const categoryBarStyles: Record<EventCategory, string> = {
+	meetup: "category-bar-meetup",
+	startup: "category-bar-startup",
+	community: "category-bar-community",
+	ai: "category-bar-ai",
 };
 
 const categoryBadgeStyles: Record<EventCategory, string> = {
@@ -48,9 +48,9 @@ export function EventCard({
 		<button
 			type="button"
 			className={cn(
-				"group w-full cursor-pointer rounded-lg border border-border-light bg-bg-white p-2 text-left shadow-sm transition-all",
+				"group w-full cursor-pointer rounded-md border border-border-light bg-bg-white p-2 text-left shadow-sm transition-all",
 				"hover:-translate-y-0.5 hover:shadow-md",
-				categoryStyles[event.category],
+				categoryBarStyles[event.category],
 				className,
 			)}
 			onClick={handleClick}
@@ -69,8 +69,8 @@ export function EventCard({
 				</span>
 			)}
 
-			{/* Time */}
-			<time className="event-time block">{formatTime(event.startTime)}</time>
+			{/* Time - monospace font */}
+			<time className="time-label block">{formatTime(event.startTime)}</time>
 
 			{/* Title */}
 			<h3 className="mt-0.5 line-clamp-2 text-[13px] font-medium text-text-primary">

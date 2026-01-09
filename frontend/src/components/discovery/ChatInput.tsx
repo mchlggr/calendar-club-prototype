@@ -13,7 +13,7 @@ interface ChatInputProps {
 
 export function ChatInput({
 	onSubmit,
-	placeholder = "Find AI meetups this weekend...",
+	placeholder = "Search events...",
 	defaultValue = "",
 	className,
 }: ChatInputProps) {
