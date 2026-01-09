@@ -65,6 +65,18 @@ export interface ChatResponse {
 	suggestedEvents?: CalendarEvent[];
 }
 
+export interface ChatStreamRequest {
+	sessionId: string;
+	message: string;
+}
+
+export interface ChatStreamEvent {
+	type: "content" | "done" | "error";
+	content?: string;
+	error?: string;
+	session_id: string;
+}
+
 export interface EventsRequest {
 	page?: number;
 	limit?: number;
@@ -258,6 +270,78 @@ export const api = {
 
 		const data = await response.json();
 		return parseDates(data) as unknown as ChatResponse;
+	},
+
+	/**
+	 * POST /api/chat/stream - Stream chat responses via SSE
+	 */
+	chatStream(
+		request: ChatStreamRequest,
+		onChunk: (event: ChatStreamEvent) => void,
+		onError?: (error: Error) => void,
+	): { abort: () => void } {
+		const baseUrl = getBaseUrl();
+		const controller = new AbortController();
+
+		(async () => {
+			try {
+				const response = await fetch(`${baseUrl}/api/chat/stream`, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						session_id: request.sessionId,
+						message: request.message,
+					}),
+					signal: controller.signal,
+				});
+
+				if (!response.ok) {
+					throw new ApiError(
+						`Stream request failed with status ${response.status}`,
+						response.status,
+					);
+				}
+
+				const reader = response.body?.getReader();
+				if (!reader) {
+					throw new NetworkError("No response body");
+				}
+
+				const decoder = new TextDecoder();
+				let buffer = "";
+
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+
+					buffer += decoder.decode(value, { stream: true });
+
+					// Parse SSE events from buffer
+					const lines = buffer.split("\n");
+					buffer = lines.pop() || "";
+
+					for (const line of lines) {
+						if (line.startsWith("data: ")) {
+							try {
+								const data = JSON.parse(line.slice(6)) as ChatStreamEvent;
+								onChunk(data);
+							} catch {
+								// Skip malformed JSON
+							}
+						}
+					}
+				}
+			} catch (error) {
+				if (error instanceof DOMException && error.name === "AbortError") {
+					return;
+				}
+				onError?.(error instanceof Error ? error : new Error(String(error)));
+			}
+		})();
+
+		return { abort: () => controller.abort() };
 	},
 
 	/**

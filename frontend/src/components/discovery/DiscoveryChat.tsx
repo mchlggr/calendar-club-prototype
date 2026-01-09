@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { CalendarEvent } from "@/components/calendar";
+import { api, type ChatStreamEvent } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { ChatInput } from "./ChatInput";
 import { ClarifyingQ, type QuestionType } from "./ClarifyingQ";
@@ -47,6 +48,110 @@ export function DiscoveryChat({
 		null,
 	);
 	const [pendingResults, setPendingResults] = useState<CalendarEvent[]>([]);
+	const [streamingMessage, setStreamingMessage] = useState<string>("");
+	const [sessionId] = useState(() => crypto.randomUUID());
+	const streamAbortRef = useRef<{ abort: () => void } | null>(null);
+
+	const startChatStream = useCallback(
+		(userQuery: string) => {
+			// Abort any existing stream
+			streamAbortRef.current?.abort();
+			setStreamingMessage("");
+			setState("processing");
+
+			const handleChunk = (event: ChatStreamEvent) => {
+				if (event.type === "content" && event.content) {
+					setStreamingMessage((prev) => prev + event.content);
+				} else if (event.type === "done") {
+					// Stream complete - add full message and show results
+					setStreamingMessage((prev) => {
+						if (prev) {
+							setMessages((msgs) => [
+								...msgs,
+								{
+									id: crypto.randomUUID(),
+									role: "agent",
+									content: prev,
+								},
+							]);
+						}
+						return "";
+					});
+
+					// For now, show mock results until we have real event search
+					const mockResults: CalendarEvent[] = [
+						{
+							id: "1",
+							title: "AI/ML Meetup: Large Language Models",
+							startTime: new Date(Date.now() + 86400000),
+							endTime: new Date(Date.now() + 86400000 + 7200000),
+							category: "ai",
+							venue: "Tech Hub",
+							neighborhood: "Downtown",
+							canonicalUrl: "https://example.com/event/1",
+							sourceId: "meetup-1",
+						},
+						{
+							id: "2",
+							title: "Startup Pitch Night",
+							startTime: new Date(Date.now() + 172800000),
+							endTime: new Date(Date.now() + 172800000 + 10800000),
+							category: "startup",
+							venue: "Innovation Center",
+							neighborhood: "University District",
+							canonicalUrl: "https://example.com/event/2",
+							sourceId: "meetup-2",
+						},
+						{
+							id: "3",
+							title: "Community Tech Talks",
+							startTime: new Date(Date.now() + 259200000),
+							endTime: new Date(Date.now() + 259200000 + 7200000),
+							category: "community",
+							venue: "Public Library",
+							neighborhood: "Midtown",
+							canonicalUrl: "https://example.com/event/3",
+							sourceId: "meetup-3",
+						},
+					];
+					setPendingResults(mockResults);
+					onResultsReady(mockResults);
+					setState("results");
+				} else if (event.type === "error") {
+					setMessages((prev) => [
+						...prev,
+						{
+							id: crypto.randomUUID(),
+							role: "agent",
+							content: `Sorry, there was an error: ${event.error}`,
+						},
+					]);
+					setStreamingMessage("");
+					setState("initial");
+				}
+			};
+
+			const handleError = (error: Error) => {
+				setMessages((prev) => [
+					...prev,
+					{
+						id: crypto.randomUUID(),
+						role: "agent",
+						content: `Sorry, there was an error: ${error.message}`,
+					},
+				]);
+				setStreamingMessage("");
+				setState("initial");
+			};
+
+			streamAbortRef.current = api.chatStream(
+				{ sessionId, message: userQuery },
+				handleChunk,
+				handleError,
+			);
+		},
+		[sessionId, onResultsReady],
+	);
 
 	const handleSubmit = (query: string) => {
 		setMessages((prev) => [
@@ -75,10 +180,11 @@ export function DiscoveryChat({
 	};
 
 	const handleClarifyAnswer = (value: string) => {
-		setMessages((prev) => [
-			...prev,
-			{ id: crypto.randomUUID(), role: "user", content: value },
-		]);
+		const newMessages = [
+			...messages,
+			{ id: crypto.randomUUID(), role: "user" as const, content: value },
+		];
+		setMessages(newMessages);
 
 		const questionOrder: QuestionType[] = [
 			"time",
@@ -93,47 +199,12 @@ export function DiscoveryChat({
 		if (currentIndex < questionOrder.length - 1) {
 			setCurrentQuestion(questionOrder[currentIndex + 1]);
 		} else {
-			setState("processing");
-			setTimeout(() => {
-				const mockResults: CalendarEvent[] = [
-					{
-						id: "1",
-						title: "AI/ML Meetup: Large Language Models",
-						startTime: new Date(Date.now() + 86400000),
-						endTime: new Date(Date.now() + 86400000 + 7200000),
-						category: "ai",
-						venue: "Tech Hub",
-						neighborhood: "Downtown",
-						canonicalUrl: "https://example.com/event/1",
-						sourceId: "meetup-1",
-					},
-					{
-						id: "2",
-						title: "Startup Pitch Night",
-						startTime: new Date(Date.now() + 172800000),
-						endTime: new Date(Date.now() + 172800000 + 10800000),
-						category: "startup",
-						venue: "Innovation Center",
-						neighborhood: "University District",
-						canonicalUrl: "https://example.com/event/2",
-						sourceId: "meetup-2",
-					},
-					{
-						id: "3",
-						title: "Community Tech Talks",
-						startTime: new Date(Date.now() + 259200000),
-						endTime: new Date(Date.now() + 259200000 + 7200000),
-						category: "community",
-						venue: "Public Library",
-						neighborhood: "Midtown",
-						canonicalUrl: "https://example.com/event/3",
-						sourceId: "meetup-3",
-					},
-				];
-				setPendingResults(mockResults);
-				onResultsReady(mockResults);
-				setState("results");
-			}, 1500);
+			// Build query from all user messages
+			const userQuery = newMessages
+				.filter((m) => m.role === "user")
+				.map((m) => m.content)
+				.join(". ");
+			startChatStream(userQuery);
 		}
 	};
 
@@ -189,11 +260,21 @@ export function DiscoveryChat({
 			)}
 
 			{state === "processing" && (
-				<div className="flex items-center gap-3 rounded-lg bg-bg-cream p-4">
-					<div className="h-5 w-5 animate-spin rounded-full border-2 border-brand-green border-t-transparent" />
-					<p className="text-sm text-text-secondary">
-						Searching through 847 events...
-					</p>
+				<div className="flex flex-col gap-3 rounded-lg bg-bg-cream p-4">
+					<div className="flex items-center gap-3">
+						<div className="h-5 w-5 animate-spin rounded-full border-2 border-brand-green border-t-transparent" />
+						<p className="text-sm text-text-secondary">
+							{streamingMessage ? "Thinking..." : "Searching through events..."}
+						</p>
+					</div>
+					{streamingMessage && (
+						<div className="border-l-[3px] border-brand-green bg-bg-white px-4 py-3 shadow-sm rounded-lg">
+							<p className="text-sm text-text-primary whitespace-pre-wrap">
+								{streamingMessage}
+								<span className="inline-block w-2 h-4 ml-1 bg-brand-green animate-pulse" />
+							</p>
+						</div>
+					)}
 				</div>
 			)}
 
