@@ -87,22 +87,16 @@ export function EventPeek({ event, anchorRect, className }: EventPeekProps) {
 			{/* Venue */}
 			{hasVenue && (
 				<div className="mb-1.5">
-					<span className="text-[11px] font-medium uppercase tracking-wide text-text-secondary">
-						Venue
-					</span>
-					<p className="text-[13px] text-text-primary">
-						{debouncedEvent.venue}
-					</p>
+					<span className="cc-label-muted">Venue</span>
+					<p className="cc-body-sm text-text-primary">{debouncedEvent.venue}</p>
 				</div>
 			)}
 
 			{/* Neighborhood */}
 			{hasNeighborhood && (
 				<div className="mb-1.5">
-					<span className="text-[11px] font-medium uppercase tracking-wide text-text-secondary">
-						Neighborhood
-					</span>
-					<p className="text-[13px] text-text-primary">
+					<span className="cc-label-muted">Neighborhood</span>
+					<p className="cc-body-sm text-text-primary">
 						{debouncedEvent.neighborhood}
 					</p>
 				</div>
@@ -110,7 +104,7 @@ export function EventPeek({ event, anchorRect, className }: EventPeekProps) {
 
 			{/* No details fallback */}
 			{!hasDetails && (
-				<p className="text-[12px] text-text-secondary italic">
+				<p className="cc-body-sm text-text-secondary italic">
 					No location details available
 				</p>
 			)}
@@ -122,7 +116,7 @@ export function EventPeek({ event, anchorRect, className }: EventPeekProps) {
 					target="_blank"
 					rel="noopener noreferrer"
 					className={cn(
-						"mt-2 inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[12px] font-medium",
+						"mt-2 inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 cc-label",
 						"bg-brand-green/10 text-brand-green hover:bg-brand-green/20",
 						"transition-colors duration-150",
 					)}

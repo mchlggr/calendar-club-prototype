@@ -58,11 +58,11 @@ export function ResultsPreview({
 		<div className={cn("flex flex-col gap-4", className)}>
 			{/* Agent message */}
 			<div className="flex items-start gap-3">
-				<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-green">
-					<span className="text-xs font-semibold text-white">CC</span>
+				<div className="cc-avatar shrink-0">
+					<span className="cc-avatar-text">CC</span>
 				</div>
-				<div className="rounded-lg border-l-[3px] border-brand-green bg-bg-white px-4 py-3 shadow-sm">
-					<p className="text-sm font-medium text-text-primary">
+				<div className="cc-bubble cc-bubble-agent">
+					<p className="cc-body font-medium">
 						I found {totalCount} events that match...
 					</p>
 				</div>
@@ -75,7 +75,7 @@ export function ResultsPreview({
 						key={event.id}
 						type="button"
 						onClick={() => handleEventClick(event)}
-						className="flex items-center gap-3 rounded-lg border border-border-light bg-bg-white p-3 text-left transition-colors hover:bg-bg-cream"
+						className="paper-card flex items-center gap-3 p-3 text-left transition-colors hover:bg-bg-cream"
 					>
 						{/* Category indicator */}
 						<div
@@ -87,10 +87,8 @@ export function ResultsPreview({
 
 						{/* Event info */}
 						<div className="min-w-0 flex-1">
-							<h4 className="truncate text-sm font-medium text-text-primary">
-								{event.title}
-							</h4>
-							<p className="text-xs text-text-secondary">
+							<h4 className="truncate cc-body font-medium">{event.title}</h4>
+							<p className="cc-body-sm text-text-secondary">
 								{formatEventDate(event.startTime)} at{" "}
 								{formatEventTime(event.startTime)}
 								{event.venue && ` · ${event.venue}`}
@@ -100,7 +98,7 @@ export function ResultsPreview({
 				))}
 
 				{totalCount > 5 && (
-					<p className="text-xs text-text-secondary">
+					<p className="cc-body-sm text-text-secondary">
 						+{totalCount - 5} more events
 					</p>
 				)}
@@ -111,7 +109,7 @@ export function ResultsPreview({
 				<button
 					type="button"
 					onClick={onViewWeek}
-					className="rounded-lg bg-brand-green px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-green/90"
+					className="btn-brutal cc-btn-primary"
 				>
 					View full week
 				</button>
@@ -119,7 +117,7 @@ export function ResultsPreview({
 					<button
 						type="button"
 						onClick={onRefine}
-						className="rounded-lg border border-border-light bg-bg-white px-4 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-bg-cream"
+						className="btn-brutal cc-btn-secondary hover:bg-bg-cream"
 					>
 						Narrow it down
 					</button>

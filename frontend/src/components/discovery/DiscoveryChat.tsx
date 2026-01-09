@@ -214,12 +214,7 @@ export function DiscoveryChat({
 	};
 
 	return (
-		<div
-			className={cn(
-				"flex flex-col gap-6 rounded-xl border border-border-light bg-bg-white p-6 shadow-md",
-				className,
-			)}
-		>
+		<div className={cn("flex flex-col gap-6 paper-card p-6", className)}>
 			{/* Chat messages */}
 			{messages.length > 0 && (
 				<div className="flex flex-col gap-4">
@@ -227,13 +222,13 @@ export function DiscoveryChat({
 						<div
 							key={message.id}
 							className={cn(
-								"max-w-md rounded-lg px-4 py-3",
+								"cc-bubble max-w-md",
 								message.role === "user"
-									? "ml-auto border-l-[3px] border-accent-orange bg-bg-cream"
-									: "border-l-[3px] border-brand-green bg-bg-white shadow-sm",
+									? "ml-auto cc-bubble-user"
+									: "cc-bubble-agent",
 							)}
 						>
-							<p className="text-sm text-text-primary">{message.content}</p>
+							<p className="cc-body">{message.content}</p>
 						</div>
 					))}
 				</div>
@@ -244,9 +239,7 @@ export function DiscoveryChat({
 				<div className="flex flex-col gap-4">
 					<ChatInput onSubmit={handleSubmit} defaultValue={initialQuery} />
 					<div>
-						<p className="mb-2 text-xs font-medium uppercase tracking-wide text-text-secondary">
-							Quick picks
-						</p>
+						<p className="mb-2 cc-label-muted">Quick picks</p>
 						<QuickPicks onSelect={handleQuickPick} />
 					</div>
 				</div>
@@ -268,8 +261,8 @@ export function DiscoveryChat({
 						</p>
 					</div>
 					{streamingMessage && (
-						<div className="border-l-[3px] border-brand-green bg-bg-white px-4 py-3 shadow-sm rounded-lg">
-							<p className="text-sm text-text-primary whitespace-pre-wrap">
+						<div className="cc-bubble cc-bubble-agent">
+							<p className="cc-body whitespace-pre-wrap">
 								{streamingMessage}
 								<span className="inline-block w-2 h-4 ml-1 bg-brand-green animate-pulse" />
 							</p>

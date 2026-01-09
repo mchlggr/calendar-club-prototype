@@ -28,20 +28,20 @@ export function Header({ className }: HeaderProps) {
 
 						<a
 							href="/login"
-							className="font-mono text-xs font-bold uppercase tracking-widest text-text-primary transition-colors hover:text-brand-green"
+							className="cc-label text-text-primary transition-colors hover:text-brand-green"
 						>
 							Login
 						</a>
 						<span className="text-border-light">|</span>
 						<a
 							href="/subscribe"
-							className="font-mono text-xs font-bold uppercase tracking-widest text-text-primary transition-colors hover:text-brand-green"
+							className="cc-label text-text-primary transition-colors hover:text-brand-green"
 						>
 							Subscribe
 						</a>
 						<button
 							type="button"
-							className="btn-brutal bg-bg-white p-2 text-text-primary"
+							className="btn-brutal cc-btn-icon"
 							aria-label="Open menu"
 						>
 							<Menu className="h-4 w-4" aria-hidden="true" />
@@ -51,7 +51,7 @@ export function Header({ className }: HeaderProps) {
 					{/* Mobile menu button */}
 					<button
 						type="button"
-						className="btn-brutal bg-bg-white p-2 text-text-primary sm:hidden"
+						className="btn-brutal cc-btn-icon sm:hidden"
 						aria-label="Open menu"
 					>
 						<Menu className="h-5 w-5" aria-hidden="true" />

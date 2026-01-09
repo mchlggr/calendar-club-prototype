@@ -57,28 +57,25 @@ export function PromoBanner({
 				<div className="tape cc-tape-left absolute -top-3 left-6 h-6 w-16 rotate-[-6deg]" />
 				<div className="tape cc-tape-right absolute -top-3 right-6 h-6 w-16 rotate-[8deg]" />
 
-				<div className="min-w-0">
-					<div className="tagline">New</div>
-					<div className="mt-1 font-serif text-xl leading-tight text-text-primary">
+				<div className="min-w-0 cc-inset-grid p-2">
+					<div className="cc-label text-text-primary">New</div>
+					<div className="mt-1 cc-h3 text-text-primary">
 						Get the weekly signal
 					</div>
-					<p className="mt-1 max-w-xl text-sm text-text-secondary">
+					<p className="mt-1 max-w-xl cc-body-sm text-text-secondary">
 						A Sunday drop of the best technical meetups—no noise, just deep
 						cuts.
 					</p>
 				</div>
 
 				<div className="flex shrink-0 items-center gap-2">
-					<a
-						href="/subscribe"
-						className="btn-brutal bg-brand-green px-4 py-2 font-mono text-xs font-bold uppercase tracking-widest text-white"
-					>
+					<a href="/subscribe" className="btn-brutal cc-btn-primary">
 						Subscribe
 					</a>
 					<button
 						type="button"
 						onClick={handleDismiss}
-						className="btn-brutal bg-bg-white p-2 text-text-primary"
+						className="btn-brutal cc-btn-icon"
 						aria-label="Dismiss promotion"
 					>
 						<X className="h-4 w-4" aria-hidden="true" />

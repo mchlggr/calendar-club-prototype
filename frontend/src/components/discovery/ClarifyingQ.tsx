@@ -70,15 +70,13 @@ export function ClarifyingQ({
 			{/* Agent message bubble */}
 			<div className="flex items-start gap-3">
 				{/* Agent avatar */}
-				<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-green">
-					<span className="text-xs font-semibold text-white">CC</span>
+				<div className="cc-avatar shrink-0">
+					<span className="cc-avatar-text">CC</span>
 				</div>
 
 				{/* Message bubble */}
-				<div className="max-w-md rounded-lg border-l-[3px] border-brand-green bg-bg-white px-4 py-3 shadow-sm">
-					<p className="text-sm font-medium text-text-primary">
-						{config.question}
-					</p>
+				<div className="cc-bubble cc-bubble-agent max-w-md">
+					<p className="cc-body font-medium">{config.question}</p>
 				</div>
 			</div>
 
@@ -89,7 +87,7 @@ export function ClarifyingQ({
 						key={chip.value}
 						type="button"
 						onClick={() => handleChipClick(chip.value)}
-						className="rounded-2xl bg-bg-cream px-4 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-accent-yellow"
+						className="cc-chip"
 					>
 						{chip.label}
 					</button>
