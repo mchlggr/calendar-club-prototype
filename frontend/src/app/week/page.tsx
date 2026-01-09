@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { WeekView, type CalendarEvent } from "@/components/calendar";
+import { type CalendarEvent, WeekView } from "@/components/calendar";
 
 function getWeekStart(date: Date): Date {
 	const d = new Date(date);
