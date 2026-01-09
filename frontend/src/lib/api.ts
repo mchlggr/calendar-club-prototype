@@ -70,11 +70,24 @@ export interface ChatStreamRequest {
 	message: string;
 }
 
+export interface EventResult {
+	id: string;
+	title: string;
+	date: string;
+	location: string;
+	category: string;
+	description: string;
+	is_free: boolean;
+	price_amount?: number;
+	distance_miles: number;
+}
+
 export interface ChatStreamEvent {
-	type: "content" | "done" | "error";
+	type: "content" | "done" | "error" | "events" | "action" | "phase";
 	content?: string;
 	error?: string;
-	session_id: string;
+	session_id?: string;
+	data?: EventResult[];
 }
 
 export interface EventsRequest {

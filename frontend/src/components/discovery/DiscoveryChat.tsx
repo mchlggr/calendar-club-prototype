@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import type { CalendarEvent } from "@/components/calendar";
-import { api, type ChatStreamEvent } from "@/lib/api";
+import { api, type ChatStreamEvent, type EventResult } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { ChatInput } from "./ChatInput";
 import { ClarifyingQ, type QuestionType } from "./ClarifyingQ";
@@ -35,6 +35,20 @@ interface ChatMessage {
 	content: string;
 }
 
+function transformEventResult(result: EventResult): CalendarEvent {
+	return {
+		id: result.id,
+		title: result.title,
+		startTime: new Date(result.date),
+		endTime: new Date(new Date(result.date).getTime() + 2 * 60 * 60 * 1000),
+		category: result.category as CalendarEvent["category"],
+		venue: result.location,
+		neighborhood: "",
+		canonicalUrl: `https://example.com/e/${result.id}`,
+		sourceId: result.id,
+	};
+}
+
 export function DiscoveryChat({
 	onSearch,
 	onResultsReady,
@@ -62,6 +76,11 @@ export function DiscoveryChat({
 			const handleChunk = (event: ChatStreamEvent) => {
 				if (event.type === "content" && event.content) {
 					setStreamingMessage((prev) => prev + event.content);
+				} else if (event.type === "events" && event.data) {
+					// Convert EventResult to CalendarEvent and store
+					const events = event.data.map(transformEventResult);
+					setPendingResults(events);
+					onResultsReady(events);
 				} else if (event.type === "done") {
 					// Stream complete - add full message and show results
 					setStreamingMessage((prev) => {
@@ -77,45 +96,6 @@ export function DiscoveryChat({
 						}
 						return "";
 					});
-
-					// For now, show mock results until we have real event search
-					const mockResults: CalendarEvent[] = [
-						{
-							id: "1",
-							title: "AI/ML Meetup: Large Language Models",
-							startTime: new Date(Date.now() + 86400000),
-							endTime: new Date(Date.now() + 86400000 + 7200000),
-							category: "ai",
-							venue: "Tech Hub",
-							neighborhood: "Downtown",
-							canonicalUrl: "https://example.com/event/1",
-							sourceId: "meetup-1",
-						},
-						{
-							id: "2",
-							title: "Startup Pitch Night",
-							startTime: new Date(Date.now() + 172800000),
-							endTime: new Date(Date.now() + 172800000 + 10800000),
-							category: "startup",
-							venue: "Innovation Center",
-							neighborhood: "University District",
-							canonicalUrl: "https://example.com/event/2",
-							sourceId: "meetup-2",
-						},
-						{
-							id: "3",
-							title: "Community Tech Talks",
-							startTime: new Date(Date.now() + 259200000),
-							endTime: new Date(Date.now() + 259200000 + 7200000),
-							category: "community",
-							venue: "Public Library",
-							neighborhood: "Midtown",
-							canonicalUrl: "https://example.com/event/3",
-							sourceId: "meetup-3",
-						},
-					];
-					setPendingResults(mockResults);
-					onResultsReady(mockResults);
 					setState("results");
 				} else if (event.type === "error") {
 					setMessages((prev) => [
