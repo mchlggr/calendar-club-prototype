@@ -1,0 +1,27 @@
+# HyperDX All-in-One for Local Development
+# Start with: docker compose up -d
+# Access UI at: http://localhost:8080
+
+services:
+  hyperdx:
+    image: docker.hyperdx.io/hyperdx/hyperdx-all-in-one
+    container_name: hyperdx-local
+    ports:
+      - "8080:8080"   # Web UI
+      - "8000:8000"   # API server
+      - "4317:4317"   # OpenTelemetry gRPC
+      - "4318:4318"   # OpenTelemetry HTTP
+    environment:
+      - HYPERDX_LOG_LEVEL=info
+    volumes:
+      - hyperdx-data:/var/lib/clickhouse
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  hyperdx-data:
