@@ -87,7 +87,7 @@ export function DiscoveryChat({
 	const hasProcessedDoneRef = useRef<boolean>(false);
 
 	const startChatStream = useCallback(
-		(userQuery: string) => {
+		(userQuery: string, historyMessages: ChatMessage[]) => {
 			// Abort any existing stream
 			streamAbortRef.current?.abort();
 			setStreamingMessage("");
@@ -176,8 +176,14 @@ export function DiscoveryChat({
 				setQuickPicks(null);
 			};
 
+			// Convert internal message format to API format (agent -> assistant)
+			const apiHistory = historyMessages.map((msg) => ({
+				role: msg.role === "agent" ? "assistant" : msg.role,
+				content: msg.content,
+			})) as { role: "user" | "assistant"; content: string }[];
+
 			streamAbortRef.current = api.chatStream(
-				{ sessionId, message: userQuery },
+				{ sessionId, message: userQuery, history: apiHistory },
 				handleChunk,
 				handleError,
 			);
@@ -188,11 +194,19 @@ export function DiscoveryChat({
 	// Unified handler for both text input and quick pick selection
 	const handleUserInput = useCallback(
 		(input: string) => {
-			// Add user message
-			setMessages((prev) => [
-				...prev,
-				{ id: crypto.randomUUID(), role: "user", content: input },
-			]);
+			// Create the new user message
+			const newUserMessage: ChatMessage = {
+				id: crypto.randomUUID(),
+				role: "user",
+				content: input,
+			};
+
+			// Build history: current messages (NOT including new user message,
+			// since backend adds message separately to the history)
+			const historyForApi = [...messages];
+
+			// Add user message to state
+			setMessages((prev) => [...prev, newUserMessage]);
 
 			// Track chat message
 			trackChatMessage({ sessionId, messageLength: input.length });
@@ -204,10 +218,10 @@ export function DiscoveryChat({
 			};
 			onSearch(searchQuery);
 
-			// Start the chat stream
-			startChatStream(input);
+			// Start the chat stream with full history
+			startChatStream(input, historyForApi);
 		},
-		[sessionId, onSearch, startChatStream],
+		[sessionId, onSearch, startChatStream, messages],
 	);
 
 	// Determine if we should show results

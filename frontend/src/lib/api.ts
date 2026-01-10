@@ -68,6 +68,7 @@ export interface ChatResponse {
 export interface ChatStreamRequest {
 	sessionId: string;
 	message: string;
+	history?: ChatMessage[];
 }
 
 export interface QuickPickOption {
@@ -311,6 +312,7 @@ export const api = {
 					body: JSON.stringify({
 						session_id: request.sessionId,
 						message: request.message,
+						history: request.history || [],
 					}),
 					signal: controller.signal,
 				});
