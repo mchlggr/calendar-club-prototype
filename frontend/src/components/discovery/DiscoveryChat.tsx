@@ -82,19 +82,25 @@ export function DiscoveryChat({
 	// null = show static defaults, [] = hide quick picks, [...] = show LLM picks
 	const [quickPicks, setQuickPicks] = useState<QuickPickOption[] | null>(null);
 	const streamAbortRef = useRef<{ abort: () => void } | null>(null);
+	const streamingMessageRef = useRef<string>("");
+	const hasProcessedDoneRef = useRef<boolean>(false);
 
 	const startChatStream = useCallback(
 		(userQuery: string) => {
 			// Abort any existing stream
 			streamAbortRef.current?.abort();
 			setStreamingMessage("");
+			streamingMessageRef.current = "";
+			hasProcessedDoneRef.current = false;
 			setIsProcessing(true);
 			// Hide quick picks while processing
 			setQuickPicks([]);
 
 			const handleChunk = (event: ChatStreamEvent) => {
 				if (event.type === "content" && event.content) {
-					setStreamingMessage((prev) => prev + event.content);
+					// Track content in ref for reliable "done" handling
+					streamingMessageRef.current += event.content;
+					setStreamingMessage(streamingMessageRef.current);
 				} else if (event.type === "quick_picks" && event.quick_picks) {
 					// LLM sent dynamic quick picks
 					setQuickPicks(event.quick_picks);
@@ -112,20 +118,24 @@ export function DiscoveryChat({
 						query: userQuery,
 					});
 				} else if (event.type === "done") {
-					// Stream complete - add full message
-					setStreamingMessage((prev) => {
-						if (prev) {
-							setMessages((msgs) => [
-								...msgs,
-								{
-									id: crypto.randomUUID(),
-									role: "agent",
-									content: prev,
-								},
-							]);
-						}
-						return "";
-					});
+					// Guard against duplicate "done" events (React StrictMode, etc.)
+					if (hasProcessedDoneRef.current) return;
+					hasProcessedDoneRef.current = true;
+
+					// Stream complete - add full message using ref value
+					const finalMessage = streamingMessageRef.current;
+					if (finalMessage) {
+						setMessages((msgs) => [
+							...msgs,
+							{
+								id: crypto.randomUUID(),
+								role: "agent",
+								content: finalMessage,
+							},
+						]);
+					}
+					setStreamingMessage("");
+					streamingMessageRef.current = "";
 					setIsProcessing(false);
 					// NO MOCK DATA - if no events found, show empty state
 					// All events must come from real API sources (Eventbrite, etc.)
