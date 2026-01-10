@@ -3,18 +3,16 @@
 import { useCallback, useRef, useState } from "react";
 import type { CalendarEvent } from "@/components/calendar";
 import {
-	ApiError,
+	type CalendarEvent as ApiCalendarEvent,
 	api,
 	type ChatStreamEvent,
-	type EventResult,
+	type QuickPickOption,
 } from "@/lib/api";
+import { trackChatMessage, trackEventsDiscovered } from "@/lib/posthog";
 import { cn } from "@/lib/utils";
 import { ChatInput } from "./ChatInput";
-import { ClarifyingQ, type QuestionType } from "./ClarifyingQ";
 import { QuickPicks } from "./QuickPicks";
 import { ResultsPreview } from "./ResultsPreview";
-
-type ChatState = "initial" | "clarifying" | "processing" | "results";
 
 interface SearchQuery {
 	rawText: string;
@@ -40,17 +38,32 @@ interface ChatMessage {
 	content: string;
 }
 
-function transformEventResult(result: EventResult): CalendarEvent {
+/**
+ * Maps API CalendarEvent to component CalendarEvent type
+ */
+function mapApiEventToCalendarEvent(event: ApiCalendarEvent): CalendarEvent {
+	// Map API categories to component category enum
+	const categoryMap: Record<string, CalendarEvent["category"]> = {
+		ai: "ai",
+		tech: "ai",
+		startup: "startup",
+		startups: "startup",
+		community: "community",
+		meetup: "meetup",
+	};
+
+	const firstCategory = event.categories?.[0]?.toLowerCase() || "meetup";
+	const category = categoryMap[firstCategory] || "meetup";
+
 	return {
-		id: result.id,
-		title: result.title,
-		startTime: new Date(result.date),
-		endTime: new Date(new Date(result.date).getTime() + 2 * 60 * 60 * 1000),
-		category: result.category as CalendarEvent["category"],
-		venue: result.location,
-		neighborhood: "",
-		canonicalUrl: `https://example.com/e/${result.id}`,
-		sourceId: result.id,
+		id: event.id,
+		title: event.title,
+		startTime: event.startTime,
+		endTime: event.endTime || new Date(event.startTime.getTime() + 7200000), // Default 2 hours
+		category,
+		venue: event.location,
+		canonicalUrl: event.url || event.sourceUrl || "",
+		sourceId: event.source,
 	};
 }
 
@@ -61,14 +74,13 @@ export function DiscoveryChat({
 	initialQuery = "",
 	className,
 }: DiscoveryChatProps) {
-	const [state, setState] = useState<ChatState>("initial");
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
-	const [currentQuestion, setCurrentQuestion] = useState<QuestionType | null>(
-		null,
-	);
+	const [isProcessing, setIsProcessing] = useState(false);
 	const [pendingResults, setPendingResults] = useState<CalendarEvent[]>([]);
 	const [streamingMessage, setStreamingMessage] = useState<string>("");
 	const [sessionId] = useState(() => crypto.randomUUID());
+	// null = show static defaults, [] = hide quick picks, [...] = show LLM picks
+	const [quickPicks, setQuickPicks] = useState<QuickPickOption[] | null>(null);
 	const streamAbortRef = useRef<{ abort: () => void } | null>(null);
 
 	const startChatStream = useCallback(
@@ -76,18 +88,31 @@ export function DiscoveryChat({
 			// Abort any existing stream
 			streamAbortRef.current?.abort();
 			setStreamingMessage("");
-			setState("processing");
+			setIsProcessing(true);
+			// Hide quick picks while processing
+			setQuickPicks([]);
 
 			const handleChunk = (event: ChatStreamEvent) => {
 				if (event.type === "content" && event.content) {
 					setStreamingMessage((prev) => prev + event.content);
-				} else if (event.type === "events" && event.data) {
-					// Convert EventResult to CalendarEvent and store
-					const events = event.data.map(transformEventResult);
-					setPendingResults(events);
-					onResultsReady(events);
+				} else if (event.type === "quick_picks" && event.quick_picks) {
+					// LLM sent dynamic quick picks
+					setQuickPicks(event.quick_picks);
+				} else if (event.type === "ready_to_search") {
+					// LLM indicates it's ready to search - we can trigger search now
+					// For now, just hide quick picks and wait for results
+					setQuickPicks([]);
+				} else if (event.type === "events" && event.events) {
+					// Real events from backend - map to component type
+					const mappedEvents = event.events.map(mapApiEventToCalendarEvent);
+					setPendingResults(mappedEvents);
+					onResultsReady(mappedEvents);
+					trackEventsDiscovered({
+						count: mappedEvents.length,
+						query: userQuery,
+					});
 				} else if (event.type === "done") {
-					// Stream complete - add full message and show results
+					// Stream complete - add full message
 					setStreamingMessage((prev) => {
 						if (prev) {
 							setMessages((msgs) => [
@@ -101,7 +126,49 @@ export function DiscoveryChat({
 						}
 						return "";
 					});
-					setState("results");
+					setIsProcessing(false);
+
+					// If no events were sent, show mock results for now
+					if (pendingResults.length === 0) {
+						const mockResults: CalendarEvent[] = [
+							{
+								id: "1",
+								title: "AI/ML Meetup: Large Language Models",
+								startTime: new Date(Date.now() + 86400000),
+								endTime: new Date(Date.now() + 86400000 + 7200000),
+								category: "ai",
+								venue: "Tech Hub",
+								neighborhood: "Downtown",
+								canonicalUrl: "https://example.com/event/1",
+								sourceId: "meetup-1",
+							},
+							{
+								id: "2",
+								title: "Startup Pitch Night",
+								startTime: new Date(Date.now() + 172800000),
+								endTime: new Date(Date.now() + 172800000 + 10800000),
+								category: "startup",
+								venue: "Innovation Center",
+								neighborhood: "University District",
+								canonicalUrl: "https://example.com/event/2",
+								sourceId: "meetup-2",
+							},
+							{
+								id: "3",
+								title: "Community Tech Talks",
+								startTime: new Date(Date.now() + 259200000),
+								endTime: new Date(Date.now() + 259200000 + 7200000),
+								category: "community",
+								venue: "Public Library",
+								neighborhood: "Midtown",
+								canonicalUrl: "https://example.com/event/3",
+								sourceId: "meetup-3",
+							},
+						];
+						setPendingResults(mockResults);
+						onResultsReady(mockResults);
+						trackEventsDiscovered({ count: mockResults.length });
+					}
 				} else if (event.type === "error") {
 					setMessages((prev) => [
 						...prev,
@@ -112,25 +179,25 @@ export function DiscoveryChat({
 						},
 					]);
 					setStreamingMessage("");
-					setState("initial");
+					setIsProcessing(false);
+					// Show static quick picks again on error
+					setQuickPicks(null);
 				}
 			};
 
 			const handleError = (error: Error) => {
-				const hint =
-					error instanceof ApiError && error.status === 404
-						? " (Is the API running? In local dev, start FastAPI on :8000 and use the Next.js /api proxy.)"
-						: "";
 				setMessages((prev) => [
 					...prev,
 					{
 						id: crypto.randomUUID(),
 						role: "agent",
-						content: `Sorry, there was an error: ${error.message}${hint}`,
+						content: `Sorry, there was an error: ${error.message}`,
 					},
 				]);
 				setStreamingMessage("");
-				setState("initial");
+				setIsProcessing(false);
+				// Show static quick picks again on error
+				setQuickPicks(null);
 			};
 
 			streamAbortRef.current = api.chatStream(
@@ -139,71 +206,52 @@ export function DiscoveryChat({
 				handleError,
 			);
 		},
-		[sessionId, onResultsReady],
+		[sessionId, onResultsReady, pendingResults.length],
 	);
 
-	const handleSubmit = (query: string) => {
-		setMessages((prev) => [
-			...prev,
-			{ id: crypto.randomUUID(), role: "user", content: query },
-		]);
+	// Unified handler for both text input and quick pick selection
+	const handleUserInput = useCallback(
+		(input: string) => {
+			// Add user message
+			setMessages((prev) => [
+				...prev,
+				{ id: crypto.randomUUID(), role: "user", content: input },
+			]);
 
-		const searchQuery: SearchQuery = {
-			rawText: query,
-			parsedIntent: {},
-		};
+			// Track chat message
+			trackChatMessage({ sessionId, messageLength: input.length });
 
-		onSearch(searchQuery);
-		setState("clarifying");
-		setCurrentQuestion("time");
-	};
+			// Notify parent of search
+			const searchQuery: SearchQuery = {
+				rawText: input,
+				parsedIntent: {},
+			};
+			onSearch(searchQuery);
 
-	const handleQuickPick = (value: string) => {
-		const quickPickLabels: Record<string, string> = {
-			"this-weekend": "this weekend",
-			"ai-tech": "AI/Tech events",
-			startups: "startup events",
-			free: "free events",
-		};
-		handleSubmit(quickPickLabels[value] || value);
-	};
-
-	const handleClarifyAnswer = (value: string) => {
-		const newMessages = [
-			...messages,
-			{ id: crypto.randomUUID(), role: "user" as const, content: value },
-		];
-		setMessages(newMessages);
-
-		const questionOrder: QuestionType[] = [
-			"time",
-			"category",
-			"location",
-			"cost",
-		];
-		const currentIndex = currentQuestion
-			? questionOrder.indexOf(currentQuestion)
-			: -1;
-
-		if (currentIndex < questionOrder.length - 1) {
-			setCurrentQuestion(questionOrder[currentIndex + 1]);
-		} else {
-			// Build query from all user messages
-			const userQuery = newMessages
-				.filter((m) => m.role === "user")
-				.map((m) => m.content)
-				.join(". ");
-			startChatStream(userQuery);
-		}
-	};
+			// Start the chat stream
+			startChatStream(input);
+		},
+		[sessionId, onSearch, startChatStream],
+	);
 
 	const handleRefine = () => {
-		setState("clarifying");
-		setCurrentQuestion("category");
+		// Clear results and show quick picks again
+		setPendingResults([]);
+		setQuickPicks(null);
 	};
 
+	// Determine if we should show results
+	const showResults = !isProcessing && pendingResults.length > 0;
+	// Determine if we should show input (when not processing and no results)
+	const showInput = !isProcessing && !showResults;
+
 	return (
-		<div className={cn("flex flex-col gap-6 paper-card p-6", className)}>
+		<div
+			className={cn(
+				"flex flex-col gap-6 rounded-xl border border-border-light bg-bg-white p-6 shadow-md",
+				className,
+			)}
+		>
 			{/* Chat messages */}
 			{messages.length > 0 && (
 				<div className="flex flex-col gap-4">
@@ -211,45 +259,39 @@ export function DiscoveryChat({
 						<div
 							key={message.id}
 							className={cn(
-								"cc-bubble max-w-md",
+								"max-w-md rounded-lg px-4 py-3",
 								message.role === "user"
-									? "ml-auto cc-bubble-user"
-									: "cc-bubble-agent",
+									? "ml-auto border-l-[3px] border-accent-orange bg-bg-cream"
+									: "border-l-[3px] border-brand-green bg-bg-white shadow-sm",
 							)}
 						>
-							<p className="cc-body text-white">{message.content}</p>
+							<p className="text-sm text-text-primary">{message.content}</p>
 						</div>
 					))}
 				</div>
 			)}
 
-			{/* State-specific content */}
-			{state === "initial" && (
+			{/* Input area with quick picks */}
+			{showInput && (
 				<div className="flex flex-col gap-4">
-					{/* Initial greeting when no messages */}
-					{messages.length === 0 && (
-						<div className="cc-bubble cc-bubble-agent max-w-md">
-							<p className="cc-body">
-								Hey! I'm your event discovery assistant. Tell me what kind of events you're looking for - like "tech meetups this weekend" or "free art shows near me".
+					<ChatInput onSubmit={handleUserInput} defaultValue={initialQuery} />
+					{/* Show quick picks: null = defaults, [] = hide, [...] = LLM picks */}
+					{quickPicks !== null && quickPicks.length === 0 ? null : (
+						<div>
+							<p className="mb-2 text-xs font-medium uppercase tracking-wide text-text-secondary">
+								Quick picks
 							</p>
+							<QuickPicks
+								options={quickPicks ?? undefined}
+								onSelect={handleUserInput}
+							/>
 						</div>
 					)}
-					<div>
-						<p className="mb-2 cc-label-muted">Quick picks</p>
-						<QuickPicks onSelect={handleQuickPick} />
-					</div>
-					<ChatInput onSubmit={handleSubmit} defaultValue={initialQuery} placeholder="What events are you looking for?" />
 				</div>
 			)}
 
-			{state === "clarifying" && currentQuestion && (
-				<ClarifyingQ
-					questionType={currentQuestion}
-					onAnswer={handleClarifyAnswer}
-				/>
-			)}
-
-			{state === "processing" && (
+			{/* Processing state */}
+			{isProcessing && (
 				<div className="flex flex-col gap-3 rounded-lg bg-bg-cream p-4">
 					<div className="flex items-center gap-3">
 						<div className="h-5 w-5 animate-spin rounded-full border-2 border-brand-green border-t-transparent" />
@@ -258,17 +300,27 @@ export function DiscoveryChat({
 						</p>
 					</div>
 					{streamingMessage && (
-						<div className="cc-bubble cc-bubble-agent">
-							<p className="cc-body whitespace-pre-wrap">
+						<div className="rounded-lg border-l-[3px] border-brand-green bg-bg-white px-4 py-3 shadow-sm">
+							<p className="whitespace-pre-wrap text-sm text-text-primary">
 								{streamingMessage}
-								<span className="inline-block w-2 h-4 ml-1 bg-brand-green animate-pulse" />
+								<span className="ml-1 inline-block h-4 w-2 animate-pulse bg-brand-green" />
 							</p>
+						</div>
+					)}
+					{/* Show LLM quick picks during processing if available */}
+					{quickPicks && quickPicks.length > 0 && (
+						<div className="mt-2">
+							<p className="mb-2 text-xs font-medium uppercase tracking-wide text-text-secondary">
+								Or try these
+							</p>
+							<QuickPicks options={quickPicks} onSelect={handleUserInput} />
 						</div>
 					)}
 				</div>
 			)}
 
-			{state === "results" && pendingResults.length > 0 && (
+			{/* Results */}
+			{showResults && (
 				<ResultsPreview
 					events={pendingResults}
 					totalCount={pendingResults.length}

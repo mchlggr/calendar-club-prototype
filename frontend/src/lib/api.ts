@@ -70,24 +70,28 @@ export interface ChatStreamRequest {
 	message: string;
 }
 
-export interface EventResult {
-	id: string;
-	title: string;
-	date: string;
-	location: string;
-	category: string;
-	description: string;
-	is_free: boolean;
-	price_amount?: number;
-	distance_miles: number;
+export interface QuickPickOption {
+	label: string;
+	value: string;
 }
 
 export interface ChatStreamEvent {
-	type: "content" | "done" | "error" | "events" | "action" | "phase";
+	type:
+		| "content"
+		| "done"
+		| "error"
+		| "events"
+		| "action"
+		| "phase"
+		| "quick_picks"
+		| "ready_to_search";
 	content?: string;
 	error?: string;
-	session_id?: string;
-	data?: EventResult[];
+	session_id: string;
+	quick_picks?: QuickPickOption[];
+	events?: CalendarEvent[];
+	phase?: string;
+	action?: string;
 }
 
 export interface EventsRequest {

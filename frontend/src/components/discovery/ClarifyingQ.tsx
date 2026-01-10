@@ -1,7 +1,17 @@
 "use client";
 
+/**
+ * @deprecated This component is deprecated in favor of LLM-driven quick picks.
+ * The DiscoveryChat component now uses QuickPicks with dynamic options from the
+ * chat stream instead of the static question flow provided by ClarifyingQ.
+ * This file is kept for reference but should not be used in new code.
+ */
+
 import { cn } from "@/lib/utils";
 
+/**
+ * @deprecated Use QuickPickOption from @/lib/api instead.
+ */
 export type QuestionType = "time" | "category" | "location" | "cost";
 
 interface ChipOption {
@@ -54,6 +64,9 @@ const questionConfig: Record<
 	},
 };
 
+/**
+ * @deprecated Use QuickPicks component with LLM-driven options instead.
+ */
 export function ClarifyingQ({
 	questionType,
 	onAnswer,

@@ -6,10 +6,11 @@ import {
 	Permanent_Marker,
 	Tilt_Warp,
 } from "next/font/google";
-import Script from "next/script";
+import { Suspense } from "react";
 import "@/styles/globals.css";
 import { Footer } from "@/components/layout/Footer";
 import { Header } from "@/components/layout/Header";
+import { PostHogProvider } from "@/components/PostHogProvider";
 import { TelemetryProvider } from "@/components/TelemetryProvider";
 import { QueryProvider } from "@/lib/query-provider";
 
@@ -54,32 +55,20 @@ export default function RootLayout({
 }>) {
 	return (
 		<html lang="en">
-			<head>
-				{process.env.NODE_ENV === "development" && (
-					<>
-						<Script
-							src="https://unpkg.com/react-grab/dist/index.global.js"
-							crossOrigin="anonymous"
-							strategy="beforeInteractive"
-						/>
-						<Script
-							src="https://unpkg.com/@react-grab/claude-code/dist/client.global.js"
-							crossOrigin="anonymous"
-							strategy="lazyOnload"
-						/>
-					</>
-				)}
-			</head>
 			<body
 				className={`${inter.variable} ${jetbrainsMono.variable} ${permanentMarker.variable} ${instrumentSerif.variable} ${tiltWarp.variable} min-h-screen bg-bg-cream font-sans antialiased`}
 			>
-				<TelemetryProvider>
-					<QueryProvider>
-						<Header />
-						<main>{children}</main>
-						<Footer />
-					</QueryProvider>
-				</TelemetryProvider>
+				<Suspense fallback={null}>
+					<PostHogProvider>
+						<TelemetryProvider>
+							<QueryProvider>
+								<Header />
+								<main>{children}</main>
+								<Footer />
+							</QueryProvider>
+						</TelemetryProvider>
+					</PostHogProvider>
+				</Suspense>
 			</body>
 		</html>
 	);
