@@ -6,6 +6,7 @@ using OpenAI Agents SDK.
 """
 
 import json
+import logging
 import os
 from typing import AsyncGenerator
 
@@ -19,6 +20,13 @@ from pydantic import BaseModel
 from api.agents import clarifying_agent
 
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger("calendarclub.api")
 
 app = FastAPI(
     title="Calendar Club API",
@@ -61,6 +69,29 @@ async def health() -> dict:
     return {"status": "healthy"}
 
 
+def _safe_json_serialize(data: object) -> str | None:
+    """Safely serialize data to JSON, returning None if not serializable."""
+    try:
+        return json.dumps(data)
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_user_error(error: Exception) -> str:
+    """Convert internal errors to user-friendly messages."""
+    error_str = str(error).lower()
+
+    if "api key" in error_str or "authentication" in error_str:
+        return "Service configuration issue. Please try again later."
+    if "timeout" in error_str:
+        return "Request timed out. Please try again."
+    if "rate limit" in error_str:
+        return "Service is busy. Please wait a moment and try again."
+
+    # Generic fallback - don't expose internal details
+    return "Something went wrong. Please try again."
+
+
 @app.post("/api/chat/stream")
 async def chat_stream(request: ChatStreamRequest) -> StreamingResponse:
     """
@@ -75,13 +106,18 @@ async def chat_stream(request: ChatStreamRequest) -> StreamingResponse:
     - type: "complete" - Response finished
     - type: "error" - An error occurred
     """
+    session_id = request.session_id
+    logger.info("Chat stream started for session %s", session_id)
 
     async def event_generator() -> AsyncGenerator[str, None]:
         try:
             # Check for API key
             if not os.getenv("OPENAI_API_KEY"):
-                yield f"data: {json.dumps({'type': 'error', 'content': 'OPENAI_API_KEY not configured'})}\n\n"
+                logger.error("OPENAI_API_KEY not configured for session %s", session_id)
+                yield f"data: {json.dumps({'type': 'error', 'content': 'Service configuration issue. Please try again later.'})}\n\n"
                 return
+
+            logger.debug("Running agent for session %s with message: %s", session_id, request.message[:100])
 
             # Run agent with streaming
             streaming_result = Runner.run_streamed(
@@ -96,24 +132,34 @@ async def chat_stream(request: ChatStreamRequest) -> StreamingResponse:
                         yield f"data: {json.dumps({'type': 'text', 'content': event.data.delta})}\n\n"
                 elif event.type == "agent_updated_stream_event":
                     # Agent handoff occurred
+                    logger.info("Agent handoff to %s for session %s", event.new_agent.name, session_id)
                     yield f"data: {json.dumps({'type': 'phase', 'agent': event.new_agent.name})}\n\n"
                 elif event.type == "run_item_stream_event":
                     if hasattr(event.item, "type"):
                         if event.item.type == "tool_call_item":
                             tool_name = getattr(event.item, "name", "unknown")
+                            logger.debug("Tool call: %s for session %s", tool_name, session_id)
                             yield f"data: {json.dumps({'type': 'action', 'tool': tool_name})}\n\n"
                         elif event.item.type == "tool_call_output_item":
                             # Stream the tool output (event results)
                             output = getattr(event.item, "output", None)
                             if output:
-                                yield f"data: {json.dumps({'type': 'events', 'data': output})}\n\n"
+                                # Validate JSON serializable before streaming
+                                serialized = _safe_json_serialize({"type": "events", "data": output})
+                                if serialized:
+                                    yield f"data: {serialized}\n\n"
+                                else:
+                                    logger.warning("Non-serializable tool output for session %s", session_id)
 
             # Signal completion
+            logger.info("Chat stream completed for session %s", session_id)
             yield f"data: {json.dumps({'type': 'complete'})}\n\n"
 
         except Exception as e:
-            # Send error event
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+            # Log full error internally, send sanitized message to user
+            logger.exception("Error in chat stream for session %s", session_id)
+            user_message = _format_user_error(e)
+            yield f"data: {json.dumps({'type': 'error', 'content': user_message})}\n\n"
 
     return StreamingResponse(
         event_generator(),
