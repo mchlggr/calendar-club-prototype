@@ -45,48 +45,6 @@ class RefinementOutput(BaseModel):
     explanation: str
 
 
-def _get_mock_events() -> list[EventResult]:
-    """Return mock events for fallback when API is unavailable."""
-    return [
-        EventResult(
-            id="evt-001",
-            title="Columbus AI Meetup",
-            date="2026-01-10T18:00:00",
-            location="Industrious Columbus",
-            category="ai",
-            description="Monthly AI/ML practitioners meetup",
-            is_free=True,
-            price_amount=None,
-            distance_miles=2.5,
-            url="https://example.com/ai-meetup",
-        ),
-        EventResult(
-            id="evt-002",
-            title="Startup Weekend Columbus",
-            date="2026-01-11T09:00:00",
-            location="Rev1 Ventures",
-            category="startup",
-            description="54-hour startup creation event",
-            is_free=False,
-            price_amount=75,
-            distance_miles=3.1,
-            url="https://example.com/startup-weekend",
-        ),
-        EventResult(
-            id="evt-003",
-            title="Tech on Tap",
-            date="2026-01-10T17:30:00",
-            location="Land-Grant Brewing",
-            category="community",
-            description="Casual tech networking over beers",
-            is_free=True,
-            price_amount=None,
-            distance_miles=1.8,
-            url="https://example.com/tech-on-tap",
-        ),
-    ]
-
-
 async def _fetch_eventbrite_events(profile: SearchProfile) -> list[EventResult]:
     """Fetch events from Eventbrite API."""
     client = get_eventbrite_client()
@@ -151,7 +109,7 @@ def search_events(profile: SearchProfile) -> list[EventResult]:
     # Check if Eventbrite API key is configured
     if not os.getenv("EVENTBRITE_API_KEY"):
         # Return mock data if no API key
-        return _get_mock_events()
+        return []
 
     try:
         # Run async fetch in sync context (tool functions are sync)
@@ -171,12 +129,12 @@ def search_events(profile: SearchProfile) -> list[EventResult]:
         # Return results or fallback to mock if empty
         if events:
             return events
-        return _get_mock_events()
+        return []
 
     except Exception as e:
         # Log error and fallback to mock data
         print(f"Eventbrite API error: {e}")
-        return _get_mock_events()
+        return []
 
 
 @function_tool
