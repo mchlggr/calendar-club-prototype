@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import dateparser
 from pydantic import BaseModel
@@ -89,7 +89,7 @@ class TemporalParser:
             return next_day_result
 
         # Fall back to dateparser for other expressions
-        result = dateparser.parse(user_input, settings=self.settings)
+        result = dateparser.parse(user_input, settings=cast(Any, self.settings))
 
         if result:
             return TemporalResult(

@@ -3,7 +3,6 @@
 from datetime import datetime
 
 import pytest
-from zoneinfo import ZoneInfo
 
 from api.services.temporal_parser import TemporalParser, TemporalResult
 
@@ -121,7 +120,6 @@ class TestTemporalParser:
         assert result.end is not None
 
         # Parse the dates to verify the range is correct
-        tz = ZoneInfo("America/New_York")
         start = datetime.fromisoformat(result.start)
         end = datetime.fromisoformat(result.end)
 

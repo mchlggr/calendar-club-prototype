@@ -10,6 +10,7 @@ dependencies = [
     "openai",
     "openai-agents>=0.6.5",
     "pydantic>=2.11.4",
+    "pydantic-settings>=2.2.1",
     "uvicorn>=0.34.2",
     "python-multipart>=0.0.18",
     "openai-agents>=0.6.5",
@@ -23,4 +24,9 @@ dependencies = [
 dev = [
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.0.0",
+    "mypy>=1.10.0",
+    "ruff>=0.9.4",
+    "types-dateparser>=1.2.2.20250809",
+    "types-icalendar>=6.3.2.20251222",
 ]

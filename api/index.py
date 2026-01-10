@@ -6,21 +6,23 @@ using OpenAI Agents SDK.
 """
 
 import json
-import os
-from typing import AsyncGenerator
+import logging
+from typing import Any, AsyncGenerator
 
 from agents import Runner
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from api.agents import clarifying_agent
+from api.config import configure_logging, get_settings
 
 from api.services import CalendarEvent, create_ics_event, create_ics_multiple
 
-load_dotenv()
+configure_logging()
+logger = logging.getLogger(__name__)
+settings = get_settings()
 
 app = FastAPI(
     title="Calendar Club API",
@@ -29,13 +31,9 @@ app = FastAPI(
 )
 
 # CORS configuration from environment
-ALLOWED_ORIGINS = os.getenv(
-    "CORS_ORIGINS", "http://localhost:3000,http://localhost:3001"
-).split(",")
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -82,17 +80,33 @@ async def chat_stream(request: ChatStreamRequest) -> StreamingResponse:
     - type: "error" - An error occurred
     """
 
+    def _to_jsonable(value: Any) -> Any:
+        if isinstance(value, BaseModel):
+            return value.model_dump()
+        if isinstance(value, list):
+            return [_to_jsonable(item) for item in value]
+        if isinstance(value, dict):
+            return {key: _to_jsonable(val) for key, val in value.items()}
+        return value
+
     async def event_generator() -> AsyncGenerator[str, None]:
         try:
+            active_settings = get_settings()
+
             # Check for API key
-            if not os.getenv("OPENAI_API_KEY"):
-                yield f"data: {json.dumps({'type': 'error', 'content': 'OPENAI_API_KEY not configured'})}\n\n"
+            if not active_settings.openai_api_key:
+                yield f"data: {json.dumps({'type': 'error', 'error': 'Service temporarily unavailable'})}\n\n"
+                logger.error("OPENAI_API_KEY not configured")
                 return
+
+            session_label = request.session_id[:8] if request.session_id else "unknown"
+            logger.info("Chat stream started for session: %s", session_label)
 
             # Run agent with streaming
             streaming_result = Runner.run_streamed(
                 clarifying_agent,
                 input=request.message,
+                context={"session_id": request.session_id},
             )
 
             async for event in streaming_result.stream_events():
@@ -102,24 +116,33 @@ async def chat_stream(request: ChatStreamRequest) -> StreamingResponse:
                         yield f"data: {json.dumps({'type': 'text', 'content': event.data.delta})}\n\n"
                 elif event.type == "agent_updated_stream_event":
                     # Agent handoff occurred
-                    yield f"data: {json.dumps({'type': 'phase', 'agent': event.new_agent.name})}\n\n"
+                    agent_name = event.new_agent.name if event.new_agent else "unknown"
+                    logger.info("Agent handoff to: %s", agent_name)
+                    yield f"data: {json.dumps({'type': 'phase', 'agent': agent_name})}\n\n"
                 elif event.type == "run_item_stream_event":
                     if hasattr(event.item, "type"):
                         if event.item.type == "tool_call_item":
                             tool_name = getattr(event.item, "name", "unknown")
+                            logger.info("Tool call: %s", tool_name)
                             yield f"data: {json.dumps({'type': 'action', 'tool': tool_name})}\n\n"
                         elif event.item.type == "tool_call_output_item":
                             # Stream the tool output (event results)
                             output = getattr(event.item, "output", None)
                             if output:
-                                yield f"data: {json.dumps({'type': 'events', 'data': output})}\n\n"
+                                serialized_output = _to_jsonable(output)
+                                try:
+                                    json.dumps(serialized_output)
+                                    yield f"data: {json.dumps({'type': 'events', 'data': serialized_output})}\n\n"
+                                except (TypeError, ValueError) as exc:
+                                    logger.warning("Tool output not JSON-serializable: %s", exc)
 
             # Signal completion
             yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+            logger.info("Chat stream completed for session: %s", session_label)
 
         except Exception as e:
-            # Send error event
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+            logger.exception("Chat stream error: %s", e)
+            yield f"data: {json.dumps({'type': 'error', 'error': 'Something went wrong. Please try again.'})}\n\n"
 
     return StreamingResponse(
         event_generator(),
@@ -167,7 +190,7 @@ def export_calendar_multiple(request: ExportEventsRequest):
 @app.post("/api/chat")
 def chat(request: ChatRequest):
     """Simple non-streaming chat endpoint (legacy)."""
-    if not os.getenv("OPENAI_API_KEY"):
+    if not get_settings().openai_api_key:
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured")
 
     # For now, return a simple message

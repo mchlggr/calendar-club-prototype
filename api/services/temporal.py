@@ -6,7 +6,7 @@ like "this weekend", "tonight", "tomorrow night".
 """
 
 from datetime import datetime, timedelta
-from typing import TypedDict
+from typing import Any, Callable, TypedDict, cast
 from zoneinfo import ZoneInfo
 
 import dateparser
@@ -29,14 +29,14 @@ class TemporalParser:
 
     def __init__(self, user_timezone: str = "America/New_York"):
         self.tz = ZoneInfo(user_timezone)
-        self.settings = {
+        self.settings: dict[str, Any] = {
             "PREFER_DATES_FROM": "future",
             "TIMEZONE": user_timezone,
             "RETURN_AS_TIMEZONE_AWARE": True,
         }
 
         # Custom handlers for range expressions
-        self.range_handlers: dict[str, callable] = {
+        self.range_handlers: dict[str, Callable[[], TemporalResult]] = {
             "this weekend": self._parse_weekend,
             "tomorrow night": self._parse_tomorrow_night,
             "tonight": self._parse_tonight,
@@ -52,7 +52,7 @@ class TemporalParser:
                 return handler()
 
         # Fall back to dateparser
-        result = dateparser.parse(user_input, settings=self.settings)
+        result = dateparser.parse(user_input, settings=cast(Any, self.settings))
 
         if result:
             return {

@@ -6,14 +6,18 @@ based on user feedback (Yes/No/Maybe ratings).
 """
 
 import asyncio
-import os
+import logging
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 
 from agents import Agent, function_tool
 
+from api.config import get_settings
 from api.models import EventFeedback, SearchProfile
 from api.services import get_eventbrite_client
+
+logger = logging.getLogger(__name__)
 
 
 # Tool input/output models for strict schema compatibility
@@ -43,6 +47,61 @@ class RefinementOutput(BaseModel):
 
     events: list[EventResult]
     explanation: str
+    source: str = Field(
+        default="refined", description="Data source: 'refined', 'demo', or 'unavailable'"
+    )
+
+
+class SearchResult(BaseModel):
+    """Result from search_events tool."""
+
+    events: list[EventResult]
+    source: str = Field(description="Data source: 'eventbrite', 'demo', or 'unavailable'")
+    message: str | None = Field(
+        default=None, description="User-facing message about data source"
+    )
+
+
+def _get_mock_events() -> list[EventResult]:
+    """Return sample events for demo mode."""
+    return [
+        EventResult(
+            id="evt-001",
+            title="Sample: Columbus AI Meetup",
+            date="2026-01-10T18:00:00",
+            location="Demo Venue, Columbus, OH",
+            category="ai",
+            description="[Demo] Monthly AI/ML practitioners meetup",
+            is_free=True,
+            price_amount=None,
+            distance_miles=2.5,
+            url=None,
+        ),
+        EventResult(
+            id="evt-002",
+            title="Sample: Tech on Tap",
+            date="2026-01-11T17:30:00",
+            location="Demo Brewery, Columbus, OH",
+            category="community",
+            description="[Demo] Casual tech networking over drinks",
+            is_free=True,
+            price_amount=None,
+            distance_miles=1.8,
+            url=None,
+        ),
+        EventResult(
+            id="evt-003",
+            title="Sample: Startup Founders Circle",
+            date="2026-01-12T08:30:00",
+            location="Demo Co-working Space, Columbus, OH",
+            category="startup",
+            description="[Demo] Peer roundtable for early-stage founders",
+            is_free=False,
+            price_amount=20,
+            distance_miles=3.1,
+            url=None,
+        ),
+    ]
 
 
 async def _fetch_eventbrite_events(profile: SearchProfile) -> list[EventResult]:
@@ -51,15 +110,27 @@ async def _fetch_eventbrite_events(profile: SearchProfile) -> list[EventResult]:
 
     # Extract search parameters from profile
     location = profile.location or "Columbus, OH"
-    categories = profile.categories if profile.categories else None
+    categories = (
+        [category.value for category in profile.categories]
+        if profile.categories
+        else None
+    )
     free_only = profile.constraints.free_only if profile.constraints else False
 
     # Parse date window
-    start_date = None
-    end_date = None
+    start_date: datetime | None = None
+    end_date: datetime | None = None
     if profile.date_window:
-        start_date = profile.date_window.start
-        end_date = profile.date_window.end
+        start_value = profile.date_window.start
+        end_value = profile.date_window.end
+        if isinstance(start_value, str):
+            start_date = datetime.fromisoformat(start_value)
+        else:
+            start_date = start_value
+        if isinstance(end_value, str):
+            end_date = datetime.fromisoformat(end_value)
+        else:
+            end_date = end_value
 
     events = await client.search_events(
         location=location,
@@ -95,8 +166,7 @@ async def _fetch_eventbrite_events(profile: SearchProfile) -> list[EventResult]:
     return results
 
 
-@function_tool
-def search_events(profile: SearchProfile) -> list[EventResult]:
+def search_events(profile: SearchProfile) -> SearchResult:
     """
     Search for events matching the profile.
 
@@ -104,12 +174,28 @@ def search_events(profile: SearchProfile) -> list[EventResult]:
         profile: SearchProfile with location, date_window, categories, constraints
 
     Returns:
-        List of events matching the search criteria
+        SearchResult with events list and source attribution
     """
-    # Check if Eventbrite API key is configured
-    if not os.getenv("EVENTBRITE_API_KEY"):
-        # Return mock data if no API key
-        return []
+    settings = get_settings()
+
+    # Check demo mode first
+    if settings.demo_mode:
+        logger.info("DEMO_MODE enabled - returning sample events")
+        return SearchResult(
+            events=_get_mock_events(),
+            source="demo",
+            message="Showing sample events (demo mode). These are examples, not real events.",
+        )
+
+    # Check for API key
+    api_key = settings.eventbrite_api_key
+    if not api_key:
+        logger.warning("EVENTBRITE_API_KEY not configured and DEMO_MODE=false")
+        return SearchResult(
+            events=[],
+            source="unavailable",
+            message="Event search is not currently available. Please check back later.",
+        )
 
     try:
         # Run async fetch in sync context (tool functions are sync)
@@ -126,18 +212,26 @@ def search_events(profile: SearchProfile) -> list[EventResult]:
         else:
             events = loop.run_until_complete(_fetch_eventbrite_events(profile))
 
-        # Return results or fallback to mock if empty
         if events:
-            return events
-        return []
+            logger.info("Eventbrite returned %s events", len(events))
+            return SearchResult(events=events, source="eventbrite", message=None)
+
+        logger.info("Eventbrite returned no events for query")
+        return SearchResult(
+            events=[],
+            source="eventbrite",
+            message="No events found matching your criteria. Try broadening your search.",
+        )
 
     except Exception as e:
-        # Log error and fallback to mock data
-        print(f"Eventbrite API error: {e}")
-        return []
+        logger.error("Eventbrite API error: %s", e, exc_info=True)
+        return SearchResult(
+            events=[],
+            source="unavailable",
+            message="Event search encountered an error. Please try again.",
+        )
 
 
-@function_tool
 def refine_results(input_data: RefinementInput) -> RefinementOutput:
     """
     Refine search results based on user feedback.
@@ -150,67 +244,89 @@ def refine_results(input_data: RefinementInput) -> RefinementOutput:
     """
     feedback = input_data.feedback
 
-    # Build constraints from feedback
-    constraints = []
-    preferences = []
+    settings = get_settings()
+
+    # Analyze feedback to understand preferences
+    wants_closer = False
+    wants_cheaper = False
+    wants_different_type = False
+    liked_ids = []
 
     for fb in feedback:
         if fb.rating.value == "no" and fb.reason:
             reason_lower = fb.reason.lower()
-            if "far" in reason_lower:
-                constraints.append("closer events")
-            elif "expensive" in reason_lower:
-                constraints.append("free or cheaper events")
-            elif "vibe" in reason_lower or "type" in reason_lower:
-                constraints.append("different event types")
+            if "far" in reason_lower or "distance" in reason_lower:
+                wants_closer = True
+            elif (
+                "expensive" in reason_lower
+                or "cost" in reason_lower
+                or "price" in reason_lower
+            ):
+                wants_cheaper = True
+            elif "vibe" in reason_lower or "type" in reason_lower or "category" in reason_lower:
+                wants_different_type = True
         elif fb.rating.value == "yes":
-            preferences.append(fb.event_id)
+            liked_ids.append(fb.event_id)
 
     # Generate explanation
     explanation_parts = []
-    if "closer events" in constraints:
-        explanation_parts.append("showing closer events")
-    if "free or cheaper events" in constraints:
-        explanation_parts.append("filtering to free/cheaper options")
-    if preferences:
-        explanation_parts.append("prioritizing similar events to ones you liked")
+    if wants_closer:
+        explanation_parts.append("looking for closer events")
+    if wants_cheaper:
+        explanation_parts.append("filtering to free or cheaper options")
+    if wants_different_type:
+        explanation_parts.append("exploring different event types")
+    if liked_ids:
+        explanation_parts.append(f"noting your interest in {len(liked_ids)} event(s)")
 
-    explanation = (
-        "Based on your feedback, I'm " + " and ".join(explanation_parts) + "."
-        if explanation_parts
-        else "Here are some alternative suggestions based on your preferences."
-    )
+    if explanation_parts:
+        explanation = "Based on your feedback, I'm " + " and ".join(explanation_parts) + "."
+    else:
+        explanation = "I've noted your preferences."
 
-    # Return refined results (simplified - real implementation would re-query)
-    # For now, return the same mock events
-    events = [
+    if not settings.demo_mode:
+        return RefinementOutput(
+            events=[],
+            explanation=(
+                f"{explanation} However, I don't have additional events to show right now. "
+                "Would you like to start a new search with different criteria?"
+            ),
+            source="unavailable",
+        )
+
+    logger.info("DEMO_MODE: Returning sample refined events")
+    demo_events = [
         EventResult(
-            id="evt-004",
-            title="Python Columbus",
+            id="demo-refined-001",
+            title="Sample: Python Columbus",
             date="2026-01-10T18:30:00",
             location="CoverMyMeds HQ",
             category="ai",
-            description="Python user group with AI/ML focus",
+            description="[Demo] Python user group with AI/ML focus",
             is_free=True,
             price_amount=None,
             distance_miles=1.2,
-            url="https://example.com/python-columbus",
+            url=None,
         ),
         EventResult(
-            id="evt-005",
-            title="Data Science Happy Hour",
+            id="demo-refined-002",
+            title="Sample: Data Science Happy Hour",
             date="2026-01-10T17:00:00",
             location="Brewdog Short North",
             category="ai",
-            description="Informal data science networking",
+            description="[Demo] Informal data science networking",
             is_free=True,
             price_amount=None,
             distance_miles=0.8,
-            url="https://example.com/data-science-happy-hour",
+            url=None,
         ),
     ]
 
-    return RefinementOutput(events=events, explanation=explanation)
+    return RefinementOutput(
+        events=demo_events,
+        explanation=explanation + " Here are some sample alternatives (demo mode).",
+        source="demo",
+    )
 
 
 SEARCH_AGENT_INSTRUCTIONS = """You show search results and help users refine them based on their feedback.
@@ -218,12 +334,32 @@ SEARCH_AGENT_INSTRUCTIONS = """You show search results and help users refine the
 ## Your Role
 You're a helpful events concierge. Present results clearly and learn from user preferences to improve recommendations.
 
+## CRITICAL GROUNDING RULES
+
+1. **Source Attribution**: Always check the `source` field from search results:
+   - If source is "demo": Say "Here are some example events to show you how this works. These aren't real events."
+   - If source is "unavailable": Say "I'm sorry, event search isn't available right now. Please try again later."
+   - If source is "eventbrite": Present events normally without qualification.
+
+2. **Zero Results**: If the events list is empty:
+   - DO NOT invent events
+   - DO NOT claim there are events when there aren't
+   - Say "I couldn't find any events matching your criteria" and suggest broadening the search
+
+3. **No Fabrication**:
+   - NEVER make up event names, dates, locations, or URLs
+   - NEVER guess at event details not in the data
+   - If a field is missing, say "details not available"
+
+4. **Message Handling**: If the result includes a `message` field, incorporate it naturally in your response.
+
 ## Flow
 
 1. **Present Results** - When you receive a SearchProfile, use the search_events tool to find events
    - Show 3-5 events at a time
    - For each event include: title, date/time, location, category, price
    - Keep descriptions brief but informative
+   - Include the event URL if available
 
 2. **Gather Feedback** - Ask the user to rate the events
    - Accept: Yes (interested), No (not interested), Maybe (could work)
@@ -243,28 +379,30 @@ You're a helpful events concierge. Present results clearly and learn from user p
 ```
 Here's what I found:
 
-1. **Columbus AI Meetup** - Friday 6pm
-   Industrious Columbus (2.5 mi) | AI/Tech | Free
-   Monthly AI/ML practitioners meetup
+1. **Event Title** - Day, Time
+   Venue Name (distance) | Category | Price
+   Brief description
+   [Link to event]
 
-2. **Tech on Tap** - Friday 5:30pm
-   Land-Grant Brewing (1.8 mi) | Community | Free
-   Casual tech networking over beers
+2. ...
+```
 
 What do you think? Let me know which ones interest you (or not)!
-```
 
 ## Example Feedback Handling
 
 User: "The first one looks good, but the second is too far"
-You: "Got it! I'll note your interest in the AI Meetup and look for closer alternatives to Tech on Tap."
+You: "Got it! I'll note your interest in the first event and look for closer alternatives."
 [Uses refine_results with feedback]
 "Based on your feedback, I found some closer options..."
 """
+
+search_events_tool = function_tool(search_events)
+refine_results_tool = function_tool(refine_results)
 
 search_agent = Agent(
     name="SearchAgent",
     instructions=SEARCH_AGENT_INSTRUCTIONS,
     model="gpt-4o",
-    tools=[search_events, refine_results],
+    tools=[search_events_tool, refine_results_tool],
 )

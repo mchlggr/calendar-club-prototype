@@ -4,12 +4,15 @@ Eventbrite API client for event discovery.
 Provides async methods to search and fetch events from Eventbrite.
 """
 
+import logging
 import os
 from datetime import datetime
 from typing import Any
 
 import httpx
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 class EventbriteEvent(BaseModel):
@@ -142,7 +145,7 @@ class EventbriteClient:
 
         except httpx.HTTPError as e:
             # Log error but don't crash - return empty list
-            print(f"Eventbrite API error: {e}")
+            logger.warning("Eventbrite API error: %s", e)
             return []
 
     def _parse_event(self, data: dict[str, Any]) -> EventbriteEvent | None:
@@ -212,7 +215,7 @@ class EventbriteClient:
             )
 
         except (KeyError, ValueError) as e:
-            print(f"Error parsing event: {e}")
+            logger.warning("Error parsing event: %s", e)
             return None
 
 

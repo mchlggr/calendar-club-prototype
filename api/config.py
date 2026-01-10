@@ -1,0 +1,64 @@
+"""Configuration management for Calendar Club API."""
+
+from __future__ import annotations
+
+import logging
+from functools import lru_cache
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Application settings loaded from environment."""
+
+    # Required
+    openai_api_key: str = Field(default="", description="OpenAI API key")
+
+    # Event sources
+    eventbrite_api_key: str = Field(default="", description="Eventbrite API key")
+
+    # Feature flags
+    demo_mode: bool = Field(default=False, description="Enable demo mode with sample events")
+
+    # Server config
+    cors_origins: str = Field(
+        default="http://localhost:3000,http://localhost:3001",
+        description="Comma-separated CORS origins",
+    )
+    log_level: str = Field(default="INFO", description="Logging level")
+
+    # Observability
+    hyperdx_api_key: str = Field(default="", description="HyperDX API key")
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Parse CORS origins into list."""
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin]
+
+    @property
+    def has_event_source(self) -> bool:
+        """Check if any event source is configured."""
+        return bool(self.eventbrite_api_key)
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Get cached settings instance."""
+    return Settings()
+
+
+def configure_logging(settings: Settings | None = None) -> None:
+    """Configure application logging."""
+    if settings is None:
+        settings = get_settings()
+
+    logging.basicConfig(
+        level=getattr(logging, settings.log_level.upper(), logging.INFO),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
