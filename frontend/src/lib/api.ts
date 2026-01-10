@@ -70,11 +70,28 @@ export interface ChatStreamRequest {
 	message: string;
 }
 
+export interface QuickPickOption {
+	label: string;
+	value: string;
+}
+
 export interface ChatStreamEvent {
-	type: "content" | "done" | "error";
+	type:
+		| "content"
+		| "done"
+		| "error"
+		| "events"
+		| "action"
+		| "phase"
+		| "quick_picks"
+		| "ready_to_search";
 	content?: string;
 	error?: string;
 	session_id: string;
+	quick_picks?: QuickPickOption[];
+	events?: CalendarEvent[];
+	phase?: string;
+	action?: string;
 }
 
 export interface EventsRequest {

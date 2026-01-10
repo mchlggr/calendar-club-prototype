@@ -1,11 +1,7 @@
 "use client";
 
+import type { QuickPickOption } from "@/lib/api";
 import { cn } from "@/lib/utils";
-
-interface QuickPickOption {
-	label: string;
-	value: string;
-}
 
 interface QuickPicksProps {
 	options?: QuickPickOption[];
@@ -15,10 +11,10 @@ interface QuickPicksProps {
 }
 
 const defaultOptions: QuickPickOption[] = [
-	{ label: "This weekend", value: "this-weekend" },
-	{ label: "AI/Tech", value: "ai-tech" },
-	{ label: "Startups", value: "startups" },
-	{ label: "Free events", value: "free" },
+	{ label: "This weekend", value: "I'm looking for events this weekend" },
+	{ label: "AI/Tech", value: "I want to find AI and tech events" },
+	{ label: "Startups", value: "Show me startup and founder events" },
+	{ label: "Free events", value: "I'm looking for free events" },
 ];
 
 export function QuickPicks({
