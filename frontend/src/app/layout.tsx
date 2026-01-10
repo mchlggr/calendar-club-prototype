@@ -6,6 +6,7 @@ import {
 	Permanent_Marker,
 	Tilt_Warp,
 } from "next/font/google";
+import Script from "next/script";
 import "@/styles/globals.css";
 import { Footer } from "@/components/layout/Footer";
 import { Header } from "@/components/layout/Header";
@@ -53,6 +54,15 @@ export default function RootLayout({
 }>) {
 	return (
 		<html lang="en">
+			<head>
+				{process.env.NODE_ENV === "development" && (
+					<Script
+						src="https://unpkg.com/react-grab/dist/index.global.js"
+						crossOrigin="anonymous"
+						strategy="beforeInteractive"
+					/>
+				)}
+			</head>
 			<body
 				className={`${inter.variable} ${jetbrainsMono.variable} ${permanentMarker.variable} ${instrumentSerif.variable} ${tiltWarp.variable} min-h-screen bg-bg-cream font-sans antialiased`}
 			>
