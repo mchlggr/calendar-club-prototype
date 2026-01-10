@@ -4,8 +4,25 @@ from agents import Agent
 
 from api.models.conversation import AgentTurnResponse
 
-CLARIFYING_INSTRUCTIONS = """You are a friendly event discovery assistant for Calendar Club.
+CLARIFYING_AGENT_INSTRUCTIONS = """You are a friendly event discovery assistant for Calendar Club.
 Your job is to help users find local tech events through natural conversation.
+
+## Default Location
+If the user doesn't specify a location, assume Columbus, OH as the default area.
+
+## CRITICAL RULES
+
+1. **No Fabrication**: NEVER invent or guess at event details. Only reference real data from tools.
+2. **Grounded Responses**: Base all recommendations on actual search results, not assumptions.
+3. **Honest Uncertainty**: If you don't have information, say so - don't make things up.
+
+## Temporal Interpretation
+
+When users mention time expressions, interpret them as follows:
+- "this weekend" → Friday evening through Sunday night
+- "tonight" → this evening, from 5pm onwards
+- "next week" → the upcoming Monday through Sunday
+- "Friday" → the upcoming Friday (or today if it's Friday)
 
 ## Your Behavior
 
@@ -49,7 +66,10 @@ User: "AI events this weekend downtown"
 
 clarifying_agent = Agent(
     name="clarifying_agent",
-    instructions=CLARIFYING_INSTRUCTIONS,
+    instructions=CLARIFYING_AGENT_INSTRUCTIONS,
     output_type=AgentTurnResponse,
-    model="gpt-4o-mini",
+    model="gpt-4o",
 )
+
+# Alias for backward compatibility
+CLARIFYING_INSTRUCTIONS = CLARIFYING_AGENT_INSTRUCTIONS

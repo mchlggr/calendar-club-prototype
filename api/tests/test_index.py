@@ -44,34 +44,27 @@ class TestChatStreamEndpoint:
     """Test chat streaming endpoint."""
 
     def test_missing_openai_key_returns_error(self, client):
-        """Without OPENAI_API_KEY, should return error event."""
+        """Without OPENAI_API_KEY, should return 500 error."""
         with patch.dict(os.environ, {}, clear=True):
             _clear_settings_cache()
             response = client.post(
                 "/api/chat/stream",
-                json={"session_id": "test-123", "message": "hello"},
+                json={"message": "hello"},
             )
-            assert response.status_code == 200
-            content = response.content.decode()
-            assert "error" in content.lower()
+            assert response.status_code == 500
 
     def test_valid_request_format(self, client):
-        """Request with valid format should be accepted."""
-        async def _empty_stream():
-            if False:
-                yield None
-
+        """Request with valid format and API key should be accepted."""
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True):
             _clear_settings_cache()
-            with patch("api.index.Runner") as mock_runner:
+            with patch("agents.Runner") as mock_runner:
                 mock_result = Mock()
-                mock_result.stream_events = _empty_stream
-                mock_runner.run_streamed.return_value = mock_result
+                mock_result.final_output = None
+                mock_runner.run.return_value = mock_result
 
                 response = client.post(
                     "/api/chat/stream",
                     json={
-                        "session_id": "test-session-123",
                         "message": "What's happening this weekend?",
                     },
                 )

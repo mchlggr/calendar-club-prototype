@@ -3,13 +3,15 @@
 import json
 import os
 from collections.abc import AsyncGenerator
+from datetime import datetime
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
+from icalendar import Calendar, Event
 from openai import OpenAI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 load_dotenv()
 
@@ -58,6 +60,22 @@ class ChatStreamRequest(BaseModel):
     history: list[ConversationMessage] = []
 
 
+class CalendarEventRequest(BaseModel):
+    """Request body for calendar export endpoint."""
+
+    title: str
+    start: str = Field(description="ISO 8601 datetime string")
+    end: str | None = Field(default=None, description="ISO 8601 datetime string")
+    description: str | None = None
+    location: str | None = None
+
+
+class MultiEventExportRequest(BaseModel):
+    """Request body for multi-event calendar export endpoint."""
+
+    events: list[CalendarEventRequest]
+
+
 def sse_event(event_type: str, data: dict) -> str:
     """Format a Server-Sent Event with type included in payload."""
     # Include type in the JSON payload so frontend can access it
@@ -81,9 +99,10 @@ async def stream_chat_response(
         messages.append({"role": "user", "content": message})
 
         # Run the agent with streaming
+        # Note: openai-agents accepts dict format for messages
         result = await Runner.run(
             clarifying_agent,
-            messages,
+            messages,  # type: ignore[arg-type]
         )
 
         # Stream the message content
@@ -163,4 +182,59 @@ async def chat_stream(request: ChatStreamRequest):
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
+    )
+
+
+@app.get("/health")
+def health():
+    """Health check endpoint for monitoring."""
+    return {"status": "healthy"}
+
+
+def _create_calendar_event(event_data: CalendarEventRequest) -> Event:
+    """Create an iCalendar event from request data."""
+    event = Event()
+    event.add("summary", event_data.title)
+    event.add("dtstart", datetime.fromisoformat(event_data.start))
+    if event_data.end:
+        event.add("dtend", datetime.fromisoformat(event_data.end))
+    if event_data.description:
+        event.add("description", event_data.description)
+    if event_data.location:
+        event.add("location", event_data.location)
+    return event
+
+
+@app.post("/api/calendar/export")
+def export_calendar(request: CalendarEventRequest):
+    """Export a single event as an ICS file."""
+    cal = Calendar()
+    cal.add("prodid", "-//Calendar Club//calendarclub.io//")
+    cal.add("version", "2.0")
+    cal.add_component(_create_calendar_event(request))
+
+    return Response(
+        content=cal.to_ical(),
+        media_type="text/calendar",
+        headers={"Content-Disposition": "attachment; filename=event.ics"},
+    )
+
+
+@app.post("/api/calendar/export-multiple")
+def export_multiple_events(request: MultiEventExportRequest):
+    """Export multiple events as an ICS file."""
+    if not request.events:
+        raise HTTPException(status_code=400, detail="No events provided")
+
+    cal = Calendar()
+    cal.add("prodid", "-//Calendar Club//calendarclub.io//")
+    cal.add("version", "2.0")
+
+    for event_data in request.events:
+        cal.add_component(_create_calendar_event(event_data))
+
+    return Response(
+        content=cal.to_ical(),
+        media_type="text/calendar",
+        headers={"Content-Disposition": "attachment; filename=events.ics"},
     )

@@ -110,27 +110,15 @@ async def _fetch_eventbrite_events(profile: SearchProfile) -> list[EventResult]:
 
     # Extract search parameters from profile
     location = profile.location or "Columbus, OH"
-    categories = (
-        [category.value for category in profile.categories]
-        if profile.categories
-        else None
-    )
-    free_only = profile.constraints.free_only if profile.constraints else False
+    categories = profile.categories if profile.categories else None
+    free_only = profile.free_only
 
-    # Parse date window
+    # Parse time window
     start_date: datetime | None = None
     end_date: datetime | None = None
-    if profile.date_window:
-        start_value = profile.date_window.start
-        end_value = profile.date_window.end
-        if isinstance(start_value, str):
-            start_date = datetime.fromisoformat(start_value)
-        else:
-            start_date = start_value
-        if isinstance(end_value, str):
-            end_date = datetime.fromisoformat(end_value)
-        else:
-            end_date = end_value
+    if profile.time_window:
+        start_date = profile.time_window.start
+        end_date = profile.time_window.end
 
     events = await client.search_events(
         location=location,
