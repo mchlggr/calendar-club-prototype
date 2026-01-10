@@ -8,7 +8,6 @@ import {
 } from "next/font/google";
 import Script from "next/script";
 import "@/styles/globals.css";
-import { Footer } from "@/components/layout/Footer";
 import { Header } from "@/components/layout/Header";
 import { TelemetryProvider } from "@/components/TelemetryProvider";
 import { QueryProvider } from "@/lib/query-provider";
@@ -70,7 +69,6 @@ export default function RootLayout({
 					<QueryProvider>
 						<Header />
 						<main>{children}</main>
-						<Footer />
 					</QueryProvider>
 				</TelemetryProvider>
 			</body>
