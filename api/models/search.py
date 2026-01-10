@@ -1,8 +1,23 @@
 """Search profile models for event discovery."""
 
 from datetime import datetime
+from enum import Enum
 
 from pydantic import BaseModel, Field
+
+
+class Rating(str, Enum):
+    """User rating for an event."""
+    YES = "yes"
+    NO = "no"
+    MAYBE = "maybe"
+
+
+class EventFeedback(BaseModel):
+    """User feedback on an event."""
+    event_id: str = Field(description="ID of the event being rated")
+    rating: Rating = Field(description="User's rating")
+    reason: str | None = Field(default=None, description="Optional reason for rating")
 
 
 class TimeWindow(BaseModel):

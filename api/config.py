@@ -31,7 +31,9 @@ class Settings(BaseSettings):
     # Observability
     hyperdx_api_key: str = Field(default="", description="HyperDX API key")
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     @property
     def cors_origins_list(self) -> list[str]:
