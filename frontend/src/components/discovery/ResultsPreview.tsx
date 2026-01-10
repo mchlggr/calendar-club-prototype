@@ -4,6 +4,7 @@ import { Download } from "lucide-react";
 import { useState } from "react";
 import type { CalendarEvent } from "@/components/calendar";
 import { api } from "@/lib/api";
+import { trackCalendarExport, trackEventClicked } from "@/lib/posthog";
 import { cn } from "@/lib/utils";
 
 interface ResultsPreviewProps {
@@ -52,6 +53,12 @@ export function ResultsPreview({
 	const displayEvents = events.slice(0, 5);
 
 	const handleEventClick = (event: CalendarEvent) => {
+		// Track event click
+		trackEventClicked({
+			eventId: event.id,
+			eventTitle: event.title,
+			category: event.category,
+		});
 		onEventClick?.(event);
 		if (event.canonicalUrl) {
 			window.open(event.canonicalUrl, "_blank", "noopener,noreferrer");
@@ -74,6 +81,11 @@ export function ResultsPreview({
 					sourceUrl: e.canonicalUrl,
 				})),
 			);
+			// Track successful export
+			trackCalendarExport({
+				eventCount: events.length,
+				exportType: events.length === 1 ? "single" : "multiple",
+			});
 		} catch (error) {
 			console.error("Export failed:", error);
 		} finally {

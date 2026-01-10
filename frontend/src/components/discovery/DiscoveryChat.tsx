@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import type { CalendarEvent } from "@/components/calendar";
 import { api, type ChatStreamEvent } from "@/lib/api";
+import { trackChatMessage, trackEventsDiscovered } from "@/lib/posthog";
 import { cn } from "@/lib/utils";
 import { ChatInput } from "./ChatInput";
 import { ClarifyingQ, type QuestionType } from "./ClarifyingQ";
@@ -116,6 +117,8 @@ export function DiscoveryChat({
 					];
 					setPendingResults(mockResults);
 					onResultsReady(mockResults);
+					// Track events discovered
+					trackEventsDiscovered({ count: mockResults.length });
 					setState("results");
 				} else if (event.type === "error") {
 					setMessages((prev) => [
@@ -158,6 +161,9 @@ export function DiscoveryChat({
 			...prev,
 			{ id: crypto.randomUUID(), role: "user", content: query },
 		]);
+
+		// Track chat message
+		trackChatMessage({ sessionId, messageLength: query.length });
 
 		const searchQuery: SearchQuery = {
 			rawText: query,
