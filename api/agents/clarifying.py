@@ -50,18 +50,51 @@ Always respond with a conversational message, suggested quick picks, and whether
 
 ## Examples
 
+### Example 1: Need more info (not ready to search)
 User: "What's happening this weekend?"
 → message: "Great! What kind of events interest you? Tech talks, networking, workshops?"
 → quick_picks: [{"label": "AI/ML", "value": "AI and machine learning events"},
                 {"label": "Startups", "value": "startup and entrepreneurship events"},
                 {"label": "Any tech", "value": "any tech events"}]
 → ready_to_search: False
+→ search_profile: null
 
-User: "AI events this weekend downtown"
-→ message: "Perfect! I'll find AI events this weekend in the downtown area. Any preference on price?"
-→ quick_picks: [{"label": "Free only", "value": "only free events"},
-                {"label": "Any price", "value": "any price is fine"}]
-→ ready_to_search: False (could also be True if you want to skip the price question)
+### Example 2: Ready to search (MUST set both ready_to_search AND search_profile)
+User: "Find AI events this weekend"
+→ message: "I'll search for AI events this weekend in Columbus!"
+→ quick_picks: []
+→ ready_to_search: True
+→ search_profile: {
+    "time_window": {
+      "start": "2026-01-10T00:00:00",
+      "end": "2026-01-12T23:59:59"
+    },
+    "categories": ["ai", "machine-learning"],
+    "keywords": ["AI", "artificial intelligence"],
+    "free_only": false
+  }
+
+### Example 3: Comprehensive request (ready immediately)
+User: "Speed dating events this week in Columbus"
+→ message: "Searching for speed dating events this week in Columbus!"
+→ quick_picks: []
+→ ready_to_search: True
+→ search_profile: {
+    "time_window": {
+      "start": "2026-01-10T00:00:00",
+      "end": "2026-01-17T23:59:59"
+    },
+    "categories": ["social", "dating"],
+    "keywords": ["speed dating"],
+    "free_only": false
+  }
+
+## CRITICAL: Search Handoff
+When ready_to_search is True, you MUST also set search_profile with at least:
+- time_window (with start/end as ISO datetime strings)
+- categories or keywords
+
+If you set ready_to_search=True but leave search_profile=null, the search will NOT happen!
 """
 
 clarifying_agent = Agent(

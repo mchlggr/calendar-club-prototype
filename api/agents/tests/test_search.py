@@ -3,6 +3,8 @@
 import os
 from unittest.mock import patch
 
+import pytest
+
 from api.agents.search import (
     EventResult,
     RefinementInput,
@@ -93,14 +95,15 @@ class TestSearchResult:
 class TestSearchEventsFunction:
     """Test search_events tool function."""
 
-    def test_no_api_key_returns_unavailable(self):
+    @pytest.mark.asyncio
+    async def test_no_api_key_returns_unavailable(self):
         """Without API key, should return unavailable."""
         with patch.dict(os.environ, {}, clear=True):
             _clear_settings_cache()
             os.environ.pop("EVENTBRITE_API_KEY", None)
 
             profile = SearchProfile()
-            result = search_events(profile)
+            result = await search_events(profile)
 
             assert result.source == "unavailable"
             assert len(result.events) == 0
