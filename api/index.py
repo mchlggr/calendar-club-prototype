@@ -148,6 +148,10 @@ async def stream_chat_response(
                 ]
                 yield sse_event("quick_picks", {"quick_picks": quick_picks_data})
 
+            # Send placeholder if provided
+            if output.placeholder:
+                yield sse_event("placeholder", {"placeholder": output.placeholder})
+
             # Phase 2: Handoff to search when ready
             if output.ready_to_search and output.search_profile:
                 logger.info("Handoff to search phase with profile: %s", output.search_profile)

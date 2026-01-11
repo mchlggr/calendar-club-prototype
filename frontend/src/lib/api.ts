@@ -85,12 +85,14 @@ export interface ChatStreamEvent {
 		| "action"
 		| "phase"
 		| "quick_picks"
+		| "placeholder"
 		| "ready_to_search"
 		| "searching";
 	content?: string;
 	error?: string;
 	session_id: string;
 	quick_picks?: QuickPickOption[];
+	placeholder?: string;
 	events?: CalendarEvent[];
 	phase?: string;
 	action?: string;

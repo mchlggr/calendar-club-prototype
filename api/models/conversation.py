@@ -20,6 +20,10 @@ class AgentTurnResponse(BaseModel):
         default_factory=list,
         description="Suggested quick picks for the user to select",
     )
+    placeholder: str | None = Field(
+        default=None,
+        description="Suggested placeholder text for the chat input (e.g., 'Tell me more about timing...')",
+    )
     ready_to_search: bool = Field(
         default=False,
         description="Whether we have enough info to search for events",
