@@ -229,3 +229,63 @@ def get_eventbrite_client() -> EventbriteClient:
     if _client is None:
         _client = EventbriteClient()
     return _client
+
+
+async def search_events_adapter(profile: Any) -> list[EventbriteEvent]:
+    """
+    Adapter for registry pattern - searches Eventbrite using a SearchProfile.
+
+    Args:
+        profile: SearchProfile with search criteria
+
+    Returns:
+        List of EventbriteEvent objects
+    """
+    client = get_eventbrite_client()
+
+    # Extract search parameters from profile
+    location = "Columbus, OH"  # Default location
+    categories = profile.categories if hasattr(profile, "categories") else None
+    free_only = profile.free_only if hasattr(profile, "free_only") else False
+
+    # Parse time window
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+    if hasattr(profile, "time_window") and profile.time_window:
+        if profile.time_window.start:
+            start_value = profile.time_window.start
+            if isinstance(start_value, str):
+                start_date = datetime.fromisoformat(start_value)
+            else:
+                start_date = start_value
+        if profile.time_window.end:
+            end_value = profile.time_window.end
+            if isinstance(end_value, str):
+                end_date = datetime.fromisoformat(end_value)
+            else:
+                end_date = end_value
+
+    return await client.search_events(
+        location=location,
+        start_date=start_date,
+        end_date=end_date,
+        categories=categories,
+        free_only=free_only,
+        page_size=10,
+    )
+
+
+def register_eventbrite_source() -> None:
+    """Register Eventbrite as an event source in the global registry."""
+    from api.services.base import EventSource, register_event_source
+
+    api_key = os.getenv("EVENTBRITE_API_KEY", "")
+
+    source = EventSource(
+        name="eventbrite",
+        search_fn=search_events_adapter,
+        is_enabled_fn=lambda: bool(api_key),
+        priority=10,  # High priority - structured event data
+        description="Eventbrite event platform with structured event data",
+    )
+    register_event_source(source)

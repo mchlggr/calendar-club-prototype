@@ -18,7 +18,11 @@ from agents import Agent, function_tool
 
 from api.config import get_settings
 from api.models import EventFeedback, SearchProfile
-from api.services import get_eventbrite_client, get_exa_client
+from api.services import (
+    EventbriteEvent,
+    ExaSearchResult,
+    get_event_source_registry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,147 +69,55 @@ class SearchResult(BaseModel):
     )
 
 
-async def _fetch_eventbrite_events(profile: SearchProfile) -> list[EventResult]:
-    """Fetch events from Eventbrite API."""
-    client = get_eventbrite_client()
+def _convert_eventbrite_event(event: EventbriteEvent) -> EventResult:
+    """Convert EventbriteEvent to EventResult format."""
+    venue = event.venue_name or "TBD"
+    if event.venue_address:
+        venue = f"{venue}, {event.venue_address}"
 
-    # Extract search parameters from profile
-    # SearchProfile doesn't have location - default to Columbus, OH
-    location = "Columbus, OH"
-    # Categories are already strings in SearchProfile
-    categories = profile.categories if profile.categories else None
-    free_only = profile.free_only
-
-    # Parse time window (SearchProfile uses time_window, not date_window)
-    start_date: datetime | None = None
-    end_date: datetime | None = None
-    if profile.time_window:
-        start_value = profile.time_window.start
-        end_value = profile.time_window.end
-        if isinstance(start_value, str):
-            start_date = datetime.fromisoformat(start_value)
-        else:
-            start_date = start_value
-        if isinstance(end_value, str):
-            end_date = datetime.fromisoformat(end_value)
-        else:
-            end_date = end_value
-
-    events = await client.search_events(
-        location=location,
-        start_date=start_date,
-        end_date=end_date,
-        categories=categories,
-        free_only=free_only,
-        page_size=10,
+    return EventResult(
+        id=event.id,
+        title=event.title,
+        date=event.start_time.isoformat(),
+        location=venue,
+        category=event.category,
+        description=event.description[:200] if event.description else "",
+        is_free=event.is_free,
+        price_amount=event.price_amount,
+        distance_miles=5.0,  # Eventbrite doesn't provide distance
+        url=event.url,
     )
 
-    # Convert to EventResult format
-    results = []
-    for event in events:
-        venue = event.venue_name or "TBD"
-        if event.venue_address:
-            venue = f"{venue}, {event.venue_address}"
 
-        results.append(
-            EventResult(
-                id=event.id,
-                title=event.title,
-                date=event.start_time.isoformat(),
-                location=venue,
-                category=event.category,
-                description=event.description[:200] if event.description else "",
-                is_free=event.is_free,
-                price_amount=event.price_amount,
-                distance_miles=5.0,  # Eventbrite doesn't provide distance
-                url=event.url,
-            )
-        )
+def _convert_exa_result(result: ExaSearchResult) -> EventResult:
+    """Convert ExaSearchResult to EventResult format."""
+    # Generate stable ID from URL
+    event_id = hashlib.md5(result.url.encode()).hexdigest()[:12]
 
-    return results
+    # Extract date from result if available
+    date_str = datetime.now().isoformat()
+    if result.published_date:
+        date_str = result.published_date.isoformat()
 
+    # Use highlights for description, fall back to text snippet
+    description = ""
+    if result.highlights:
+        description = " ".join(result.highlights[:2])
+    elif result.text:
+        description = result.text[:200]
 
-async def _fetch_exa_events(profile: SearchProfile) -> list[EventResult]:
-    """Fetch events from Exa web search API."""
-    client = get_exa_client()
-
-    # Build search query from profile
-    query_parts = ["events", "Columbus Ohio"]
-
-    if profile.categories:
-        query_parts.extend(profile.categories)
-
-    if profile.keywords:
-        query_parts.extend(profile.keywords)
-
-    # Add time context
-    if profile.time_window:
-        if profile.time_window.start:
-            query_parts.append(profile.time_window.start.strftime("%B %Y"))
-
-    query = " ".join(query_parts)
-
-    # Set date filters
-    start_date = profile.time_window.start if profile.time_window else None
-    end_date = profile.time_window.end if profile.time_window else None
-
-    # Include domains known for events
-    include_domains = [
-        "eventbrite.com",
-        "meetup.com",
-        "lu.ma",
-        "posh.vip",
-        "facebook.com/events",
-    ]
-
-    try:
-        results = await client.search(
-            query=query,
-            num_results=10,
-            include_text=True,
-            include_highlights=True,
-            start_published_date=start_date,
-            end_published_date=end_date,
-            include_domains=include_domains,
-        )
-
-        events = []
-        for result in results:
-            # Generate stable ID from URL
-            event_id = hashlib.md5(result.url.encode()).hexdigest()[:12]
-
-            # Extract date from result if available
-            date_str = datetime.now().isoformat()
-            if result.published_date:
-                date_str = result.published_date.isoformat()
-
-            # Use highlights for description, fall back to text snippet
-            description = ""
-            if result.highlights:
-                description = " ".join(result.highlights[:2])
-            elif result.text:
-                description = result.text[:200]
-
-            events.append(
-                EventResult(
-                    id=f"exa-{event_id}",
-                    title=result.title,
-                    date=date_str,
-                    location="Columbus, OH",  # Exa doesn't provide structured location
-                    category="community",  # Default category
-                    description=description,
-                    is_free=False,  # Unknown from Exa
-                    price_amount=None,
-                    distance_miles=10.0,  # Unknown from Exa
-                    url=result.url,
-                )
-            )
-
-        return events
-
-    except Exception as e:
-        logger.warning("Exa search error: %s", e)
-        return []
+    return EventResult(
+        id=f"exa-{event_id}",
+        title=result.title,
+        date=date_str,
+        location="Columbus, OH",  # Exa doesn't provide structured location
+        category="community",  # Default category
+        description=description,
+        is_free=False,  # Unknown from Exa
+        price_amount=None,
+        distance_miles=10.0,  # Unknown from Exa
+        url=result.url,
+    )
 
 
 def _normalize_url(url: str | None) -> str | None:
@@ -255,11 +167,33 @@ def _deduplicate_events(events: list[EventResult]) -> list[EventResult]:
     return unique_events
 
 
+def _convert_source_results(
+    source_name: str, results: list[object]
+) -> list[EventResult]:
+    """Convert source-specific results to EventResult format."""
+    events: list[EventResult] = []
+
+    for result in results:
+        try:
+            if source_name == "eventbrite" and isinstance(result, EventbriteEvent):
+                events.append(_convert_eventbrite_event(result))
+            elif source_name == "exa" and isinstance(result, ExaSearchResult):
+                events.append(_convert_exa_result(result))
+            else:
+                # Unknown source type - skip
+                logger.debug("Skipping unknown result type from %s", source_name)
+        except Exception as e:
+            logger.warning("Error converting result from %s: %s", source_name, e)
+
+    return events
+
+
 async def search_events(profile: SearchProfile) -> SearchResult:
     """
     Search for events matching the profile.
 
-    Queries Eventbrite and Exa in parallel, then deduplicates results.
+    Uses the event source registry to query all enabled sources in parallel,
+    then deduplicates results.
 
     Args:
         profile: SearchProfile with location, date_window, categories, constraints
@@ -267,32 +201,35 @@ async def search_events(profile: SearchProfile) -> SearchResult:
     Returns:
         SearchResult with events list and source attribution
     """
-    settings = get_settings()
+    registry = get_event_source_registry()
+    enabled_sources = registry.get_enabled()
 
-    # Determine which sources are available
-    has_eventbrite = bool(settings.eventbrite_api_key)
-    has_exa = bool(settings.exa_api_key)
-
-    if not has_eventbrite and not has_exa:
-        logger.warning("No event source API keys configured")
-        return SearchResult(
-            events=[],
-            source="unavailable",
-            message="Event search is not currently available.",
-        )
+    if not enabled_sources:
+        # Fall back to settings check for backward compatibility
+        settings = get_settings()
+        if not settings.has_event_source:
+            logger.warning("No event sources enabled in registry")
+            return SearchResult(
+                events=[],
+                source="unavailable",
+                message="Event search is not currently available.",
+            )
 
     try:
-        # Build list of fetch tasks
+        # Build list of fetch tasks from enabled sources
         tasks = []
         source_names = []
 
-        if has_eventbrite:
-            tasks.append(_fetch_eventbrite_events(profile))
-            source_names.append("eventbrite")
+        for source in enabled_sources:
+            tasks.append(source.search_fn(profile))
+            source_names.append(source.name)
 
-        if has_exa:
-            tasks.append(_fetch_exa_events(profile))
-            source_names.append("exa")
+        if not tasks:
+            return SearchResult(
+                events=[],
+                source="unavailable",
+                message="No event sources are currently enabled.",
+            )
 
         # Query sources in parallel
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -302,13 +239,16 @@ async def search_events(profile: SearchProfile) -> SearchResult:
         successful_sources: list[str] = []
 
         for i, result in enumerate(results):
+            source_name = source_names[i]
             if isinstance(result, BaseException):
-                logger.warning("%s fetch failed: %s", source_names[i], result)
-            elif isinstance(result, list) and result:
-                events_list: list[EventResult] = result
-                all_events.extend(events_list)
-                successful_sources.append(source_names[i])
-                logger.info("%s returned %d events", source_names[i], len(events_list))
+                logger.warning("%s fetch failed: %s", source_name, result)
+            elif isinstance(result, list):
+                # Convert source-specific results to EventResult
+                converted = _convert_source_results(source_name, result)
+                if converted:
+                    all_events.extend(converted)
+                    successful_sources.append(source_name)
+                    logger.info("%s returned %d events", source_name, len(converted))
 
         if not all_events:
             source = "+".join(successful_sources) if successful_sources else "unavailable"

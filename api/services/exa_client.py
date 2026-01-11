@@ -303,3 +303,74 @@ def get_exa_client() -> ExaClient:
     if _client is None:
         _client = ExaClient()
     return _client
+
+
+async def search_events_adapter(profile: Any) -> list[ExaSearchResult]:
+    """
+    Adapter for registry pattern - searches Exa using a SearchProfile.
+
+    Args:
+        profile: SearchProfile with search criteria
+
+    Returns:
+        List of ExaSearchResult objects
+    """
+    client = get_exa_client()
+
+    # Build search query from profile
+    query_parts = ["events", "Columbus Ohio"]
+
+    if hasattr(profile, "categories") and profile.categories:
+        query_parts.extend(profile.categories)
+
+    if hasattr(profile, "keywords") and profile.keywords:
+        query_parts.extend(profile.keywords)
+
+    # Add time context
+    if hasattr(profile, "time_window") and profile.time_window:
+        if profile.time_window.start:
+            query_parts.append(profile.time_window.start.strftime("%B %Y"))
+
+    query = " ".join(query_parts)
+
+    # Set date filters
+    start_date = None
+    end_date = None
+    if hasattr(profile, "time_window") and profile.time_window:
+        start_date = profile.time_window.start
+        end_date = profile.time_window.end
+
+    # Include domains known for events
+    include_domains = [
+        "eventbrite.com",
+        "meetup.com",
+        "lu.ma",
+        "posh.vip",
+        "facebook.com/events",
+    ]
+
+    return await client.search(
+        query=query,
+        num_results=10,
+        include_text=True,
+        include_highlights=True,
+        start_published_date=start_date,
+        end_published_date=end_date,
+        include_domains=include_domains,
+    )
+
+
+def register_exa_source() -> None:
+    """Register Exa as an event source in the global registry."""
+    from api.services.base import EventSource, register_event_source
+
+    api_key = os.getenv("EXA_API_KEY", "")
+
+    source = EventSource(
+        name="exa",
+        search_fn=search_events_adapter,
+        is_enabled_fn=lambda: bool(api_key),
+        priority=20,  # Lower priority than Eventbrite - less structured data
+        description="Exa neural web search for event discovery",
+    )
+    register_event_source(source)
