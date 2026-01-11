@@ -87,6 +87,13 @@ async def stream_chat_response(
             messages,
         )
 
+        # Debug logging for search handoff
+        if result.final_output:
+            output = result.final_output
+            print(f"[DEBUG] ready_to_search: {output.ready_to_search}")
+            print(f"[DEBUG] search_profile: {output.search_profile}")
+            print(f"[DEBUG] full output: {output.model_dump_json(indent=2)}")
+
         # Stream the message content
         if result.final_output:
             output = result.final_output
