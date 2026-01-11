@@ -82,6 +82,10 @@ export function DiscoveryChat({
 	// null = show static defaults, [] = hide quick picks, [...] = show LLM picks
 	const [quickPicks, setQuickPicks] = useState<QuickPickOption[] | null>(null);
 	const [isSearching, setIsSearching] = useState(false);
+	// Dynamic placeholder from LLM, null = use default
+	const [dynamicPlaceholder, setDynamicPlaceholder] = useState<string | null>(
+		null,
+	);
 	const streamAbortRef = useRef<{ abort: () => void } | null>(null);
 	const streamingMessageRef = useRef<string>("");
 	const hasProcessedDoneRef = useRef<boolean>(false);
@@ -109,6 +113,9 @@ export function DiscoveryChat({
 				} else if (event.type === "quick_picks" && event.quick_picks) {
 					// LLM sent dynamic quick picks
 					setQuickPicks(event.quick_picks);
+				} else if (event.type === "placeholder" && event.placeholder) {
+					// LLM sent dynamic placeholder for input
+					setDynamicPlaceholder(event.placeholder);
 				} else if (event.type === "ready_to_search") {
 					// LLM indicates it's ready to search - we can trigger search now
 					// For now, just hide quick picks and wait for results
@@ -319,7 +326,10 @@ export function DiscoveryChat({
 				onSubmit={handleUserInput}
 				defaultValue={initialQuery}
 				disabled={isProcessing}
-				placeholder={showResults ? "Narrow it down..." : "Search events..."}
+				placeholder={
+					dynamicPlaceholder ??
+					(showResults ? "Narrow it down..." : "Search events...")
+				}
 			/>
 		</div>
 	);

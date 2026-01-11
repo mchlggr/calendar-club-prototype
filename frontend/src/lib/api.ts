@@ -44,12 +44,25 @@ export interface QuickPickOption {
 }
 
 export interface ChatStreamEvent {
-	type: "content" | "done" | "error" | "events" | "quick_picks" | "searching";
+	type:
+		| "content"
+		| "done"
+		| "error"
+		| "events"
+		| "action"
+		| "phase"
+		| "quick_picks"
+		| "placeholder"
+		| "ready_to_search"
+		| "searching";
 	content?: string;
 	message?: string;
 	error?: string;
 	quick_picks?: QuickPickOption[];
+	placeholder?: string;
 	events?: DiscoveryEventWire[];
+	phase?: string;
+	action?: string;
 }
 
 export interface CalendarExportEvent {
