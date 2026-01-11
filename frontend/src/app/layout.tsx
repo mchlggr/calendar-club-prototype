@@ -12,7 +12,6 @@ import { Footer } from "@/components/layout/Footer";
 import { Header } from "@/components/layout/Header";
 import { PostHogProvider } from "@/components/PostHogProvider";
 import { TelemetryProvider } from "@/components/TelemetryProvider";
-import { QueryProvider } from "@/lib/query-provider";
 
 const inter = Inter({
 	variable: "--font-inter",
@@ -61,11 +60,9 @@ export default function RootLayout({
 				<Suspense fallback={null}>
 					<PostHogProvider>
 						<TelemetryProvider>
-							<QueryProvider>
-								<Header />
-								<main>{children}</main>
-								<Footer />
-							</QueryProvider>
+							<Header />
+							<main>{children}</main>
+							<Footer />
 						</TelemetryProvider>
 					</PostHogProvider>
 				</Suspense>
