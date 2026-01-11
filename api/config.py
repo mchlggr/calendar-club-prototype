@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     # Event sources
     eventbrite_api_key: str = Field(default="", description="Eventbrite API key")
+    exa_api_key: str = Field(default="", description="Exa API key for web search")
 
     # Server config
     cors_origins: str = Field(
@@ -40,7 +41,7 @@ class Settings(BaseSettings):
     @property
     def has_event_source(self) -> bool:
         """Check if any event source is configured."""
-        return bool(self.eventbrite_api_key)
+        return bool(self.eventbrite_api_key) or bool(self.exa_api_key)
 
 
 @lru_cache
