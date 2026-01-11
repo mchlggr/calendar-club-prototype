@@ -1,7 +1,6 @@
 export { DayColumn } from "./DayColumn";
 export { EventCard } from "./EventCard";
 export { EventPeek } from "./EventPeek";
-export { FeaturedEventBanner } from "./FeaturedEventBanner";
 export { StartsHereSticker } from "./StartsHereSticker";
 export type { CalendarEvent, EventCategory } from "./types";
 export { WeekHeader } from "./WeekHeader";
