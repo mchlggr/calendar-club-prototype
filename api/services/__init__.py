@@ -20,6 +20,11 @@ from .firecrawl import (
     get_firecrawl_client,
     get_posh_extractor,
 )
+from .google_calendar import (
+    GoogleCalendarEvent,
+    GoogleCalendarService,
+    get_google_calendar_service,
+)
 from .msgraph import (
     MSGraphAuth,
     OutlookCalendarClient,
@@ -57,6 +62,9 @@ __all__ = [
     "ScrapedEvent",
     "get_firecrawl_client",
     "get_posh_extractor",
+    "GoogleCalendarEvent",
+    "GoogleCalendarService",
+    "get_google_calendar_service",
     "MSGraphAuth",
     "OutlookCalendarClient",
     "OutlookEvent",

@@ -20,6 +20,14 @@ class Settings(BaseSettings):
     exa_api_key: str = Field(default="", description="Exa API key for web search")
     firecrawl_api_key: str = Field(default="", description="Firecrawl API key for web scraping")
 
+    # Google Calendar OAuth
+    google_client_id: str = Field(default="", description="Google OAuth client ID")
+    google_client_secret: str = Field(default="", description="Google OAuth client secret")
+    google_redirect_uri: str = Field(
+        default="http://localhost:3000/auth/google/callback",
+        description="Google OAuth redirect URI",
+    )
+
     # Server config
     cors_origins: str = Field(
         default="http://localhost:3000,http://localhost:3001",

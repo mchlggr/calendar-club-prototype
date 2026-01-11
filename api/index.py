@@ -21,6 +21,10 @@ from api.agents.search import search_events
 from api.config import get_settings
 from api.services.background_tasks import get_background_task_manager
 from api.services.calendar import CalendarEvent, create_ics_event, create_ics_multiple
+from api.services.google_calendar import (
+    GoogleCalendarEvent,
+    get_google_calendar_service,
+)
 from api.services.session import get_session_manager
 from api.services.sse_connections import get_sse_manager
 
@@ -347,3 +351,162 @@ def export_calendar_multiple(request: ExportMultipleRequest):
         media_type="text/calendar",
         headers={"Content-Disposition": "attachment; filename=events.ics"},
     )
+
+
+# Google Calendar OAuth endpoints
+
+
+class GoogleAuthRequest(BaseModel):
+    """Request body for Google OAuth initiation."""
+
+    user_id: str
+    redirect_url: str | None = None
+
+
+class GoogleEventRequest(BaseModel):
+    """Request body for creating a Google Calendar event."""
+
+    user_id: str
+    event: GoogleCalendarEvent
+
+
+class GoogleEventsRequest(BaseModel):
+    """Request body for creating multiple Google Calendar events."""
+
+    user_id: str
+    events: list[GoogleCalendarEvent]
+
+
+@app.post("/api/google/auth")
+def google_auth_start(request: GoogleAuthRequest):
+    """Start Google OAuth flow.
+
+    Returns the authorization URL that the user should be redirected to.
+    """
+    service = get_google_calendar_service()
+
+    if not service.is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Google Calendar integration is not configured",
+        )
+
+    try:
+        auth_url = service.get_authorization_url(
+            user_id=request.user_id,
+            redirect_url=request.redirect_url,
+        )
+        return {"authorization_url": auth_url}
+    except Exception as e:
+        logger.error("Failed to start Google OAuth: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.get("/api/google/callback")
+def google_auth_callback(code: str, state: str):
+    """Handle Google OAuth callback.
+
+    Exchanges the authorization code for tokens and stores them.
+    """
+    service = get_google_calendar_service()
+
+    if not service.is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Google Calendar integration is not configured",
+        )
+
+    try:
+        user_id, redirect_url = service.handle_oauth_callback(code=code, state=state)
+        return {
+            "success": True,
+            "user_id": user_id,
+            "redirect_url": redirect_url,
+        }
+    except Exception as e:
+        logger.error("Google OAuth callback failed: %s", e)
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@app.get("/api/google/status/{user_id}")
+def google_auth_status(user_id: str):
+    """Check if a user has valid Google Calendar credentials."""
+    service = get_google_calendar_service()
+
+    if not service.is_configured():
+        return {
+            "configured": False,
+            "authenticated": False,
+        }
+
+    return {
+        "configured": True,
+        "authenticated": service.has_valid_credentials(user_id),
+    }
+
+
+@app.delete("/api/google/revoke/{user_id}")
+def google_auth_revoke(user_id: str):
+    """Revoke Google Calendar credentials for a user."""
+    service = get_google_calendar_service()
+    revoked = service.revoke_credentials(user_id)
+    return {"revoked": revoked}
+
+
+@app.post("/api/google/calendar/event")
+def create_google_event(request: GoogleEventRequest):
+    """Create an event in the user's Google Calendar."""
+    service = get_google_calendar_service()
+
+    if not service.is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Google Calendar integration is not configured",
+        )
+
+    if not service.has_valid_credentials(request.user_id):
+        raise HTTPException(
+            status_code=401,
+            detail="User has not authenticated with Google Calendar",
+        )
+
+    try:
+        result = service.create_event(request.user_id, request.event)
+        return {
+            "success": True,
+            "event_id": result.get("id"),
+            "html_link": result.get("htmlLink"),
+        }
+    except Exception as e:
+        logger.error("Failed to create Google Calendar event: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.post("/api/google/calendar/events")
+def create_google_events(request: GoogleEventsRequest):
+    """Create multiple events in the user's Google Calendar."""
+    service = get_google_calendar_service()
+
+    if not service.is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Google Calendar integration is not configured",
+        )
+
+    if not service.has_valid_credentials(request.user_id):
+        raise HTTPException(
+            status_code=401,
+            detail="User has not authenticated with Google Calendar",
+        )
+
+    try:
+        results = service.create_events_batch(request.user_id, request.events)
+        return {
+            "success": True,
+            "created": len([r for r in results if "id" in r]),
+            "failed": len([r for r in results if "error" in r]),
+            "events": results,
+        }
+    except Exception as e:
+        logger.error("Failed to create Google Calendar events: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
