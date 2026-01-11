@@ -1,5 +1,6 @@
 """API endpoints for Calendar Club discovery chat."""
 
+import asyncio
 import json
 import logging
 import os
@@ -17,8 +18,11 @@ from agents import Runner, SQLiteSession
 
 from api.agents import clarifying_agent
 from api.agents.search import search_events
+from api.config import get_settings
+from api.services.background_tasks import get_background_task_manager
 from api.services.calendar import CalendarEvent, create_ics_event, create_ics_multiple
 from api.services.session import get_session_manager
+from api.services.sse_connections import get_sse_manager
 
 load_dotenv()
 
@@ -109,7 +113,7 @@ def sse_event(event_type: str, data: dict) -> str:
 
 
 async def stream_chat_response(
-    message: str, session: SQLiteSession | None = None
+    message: str, session: SQLiteSession | None = None, session_id: str | None = None
 ) -> AsyncGenerator[str, None]:
     """Stream chat response with automatic handoff from clarifying to search phase.
 
@@ -117,7 +121,17 @@ async def stream_chat_response(
     1. ClarifyingAgent gathers user preferences
     2. When ready_to_search=True, handoff to search phase
     3. SearchAgent presents results and handles refinement
+    4. Background Websets discovery pushes more_events later
     """
+    sse_manager = get_sse_manager()
+    bg_manager = get_background_task_manager()
+    settings = get_settings()
+    connection = None
+
+    # Register SSE connection for background event delivery
+    if session_id:
+        connection = await sse_manager.register(session_id)
+
     try:
         # Phase 1: Run ClarifyingAgent to gather/refine preferences
         logger.info("Running ClarifyingAgent for message: %s", message[:50])
@@ -178,6 +192,18 @@ async def stream_chat_response(
                     for i in range(0, len(result_message), 10):
                         chunk = result_message[i : i + 10]
                         yield sse_event("content", {"content": chunk})
+
+                    # Start background Websets discovery if Exa is configured
+                    if session_id and settings.exa_api_key:
+                        webset_id = await bg_manager.start_webset_discovery(
+                            session_id=session_id,
+                            profile=output.search_profile,
+                        )
+                        if webset_id:
+                            yield sse_event(
+                                "background_search",
+                                {"message": "Searching for more events in the background..."},
+                            )
                 else:
                     # No results found
                     no_results_msg = "\n\nI couldn't find any events matching your criteria. "
@@ -192,10 +218,34 @@ async def stream_chat_response(
 
         yield sse_event("done", {})
 
+        # Keep connection alive briefly to receive background events
+        if connection and session_id:
+            try:
+                # Wait for background events for a short time
+                while True:
+                    try:
+                        event = await asyncio.wait_for(
+                            connection.queue.get(),
+                            timeout=0.5,
+                        )
+                        yield sse_event(event["type"], event)
+                    except asyncio.TimeoutError:
+                        # No more events, check if we should keep waiting
+                        if not connection.active:
+                            break
+                        # Small poll window, then exit
+                        break
+            except Exception as e:
+                logger.debug("Background event loop ended: %s", e)
+
     except Exception as e:
         logger.error("Error in stream_chat_response: %s", e, exc_info=True)
         yield sse_event("error", {"message": _format_user_error(e)})
         yield sse_event("done", {})
+    finally:
+        # Unregister connection
+        if session_id:
+            await sse_manager.unregister(session_id)
 
 
 @app.get("/")
@@ -266,7 +316,7 @@ async def chat_stream(request: ChatStreamRequest):
         session = session_manager.get_session(request.session_id)
 
     return StreamingResponse(
-        stream_chat_response(request.message, session),
+        stream_chat_response(request.message, session, request.session_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
