@@ -39,7 +39,7 @@ class TestSearchAgentPrompt:
     def test_prompt_includes_source_attribution(self):
         """Prompt should require source attribution."""
         assert "source" in SEARCH_AGENT_INSTRUCTIONS.lower()
-        assert "demo" in SEARCH_AGENT_INSTRUCTIONS.lower()
+        assert "unavailable" in SEARCH_AGENT_INSTRUCTIONS.lower()
 
     def test_prompt_includes_zero_result_handling(self):
         """Prompt should handle zero results."""

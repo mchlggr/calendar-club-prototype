@@ -48,7 +48,7 @@ class RefinementOutput(BaseModel):
     events: list[EventResult]
     explanation: str
     source: str = Field(
-        default="refined", description="Data source: 'refined', 'demo', or 'unavailable'"
+        default="refined", description="Data source: 'refined' or 'unavailable'"
     )
 
 
@@ -56,52 +56,10 @@ class SearchResult(BaseModel):
     """Result from search_events tool."""
 
     events: list[EventResult]
-    source: str = Field(description="Data source: 'eventbrite', 'demo', or 'unavailable'")
+    source: str = Field(description="Data source: 'eventbrite' or 'unavailable'")
     message: str | None = Field(
         default=None, description="User-facing message about data source"
     )
-
-
-def _get_mock_events() -> list[EventResult]:
-    """Return sample events for demo mode."""
-    return [
-        EventResult(
-            id="evt-001",
-            title="Sample: Columbus AI Meetup",
-            date="2026-01-10T18:00:00",
-            location="Demo Venue, Columbus, OH",
-            category="ai",
-            description="[Demo] Monthly AI/ML practitioners meetup",
-            is_free=True,
-            price_amount=None,
-            distance_miles=2.5,
-            url=None,
-        ),
-        EventResult(
-            id="evt-002",
-            title="Sample: Tech on Tap",
-            date="2026-01-11T17:30:00",
-            location="Demo Brewery, Columbus, OH",
-            category="community",
-            description="[Demo] Casual tech networking over drinks",
-            is_free=True,
-            price_amount=None,
-            distance_miles=1.8,
-            url=None,
-        ),
-        EventResult(
-            id="evt-003",
-            title="Sample: Startup Founders Circle",
-            date="2026-01-12T08:30:00",
-            location="Demo Co-working Space, Columbus, OH",
-            category="startup",
-            description="[Demo] Peer roundtable for early-stage founders",
-            is_free=False,
-            price_amount=20,
-            distance_miles=3.1,
-            url=None,
-        ),
-    ]
 
 
 async def _fetch_eventbrite_events(profile: SearchProfile) -> list[EventResult]:
@@ -176,23 +134,13 @@ def search_events(profile: SearchProfile) -> SearchResult:
     """
     settings = get_settings()
 
-    # Check demo mode first
-    if settings.demo_mode:
-        logger.info("DEMO_MODE enabled - returning sample events")
-        return SearchResult(
-            events=_get_mock_events(),
-            source="demo",
-            message="Showing sample events (demo mode). These are examples, not real events.",
-        )
-
     # Check for API key
-    api_key = settings.eventbrite_api_key
-    if not api_key:
-        logger.warning("EVENTBRITE_API_KEY not configured and DEMO_MODE=false")
+    if not settings.eventbrite_api_key:
+        logger.warning("EVENTBRITE_API_KEY not configured")
         return SearchResult(
             events=[],
             source="unavailable",
-            message="Event search is not currently available. Please check back later.",
+            message="Event search is not currently available.",
         )
 
     try:
@@ -242,8 +190,6 @@ def refine_results(input_data: RefinementInput) -> RefinementOutput:
     """
     feedback = input_data.feedback
 
-    settings = get_settings()
-
     # Analyze feedback to understand preferences
     wants_closer = False
     wants_cheaper = False
@@ -282,48 +228,14 @@ def refine_results(input_data: RefinementInput) -> RefinementOutput:
     else:
         explanation = "I've noted your preferences."
 
-    if not settings.demo_mode:
-        return RefinementOutput(
-            events=[],
-            explanation=(
-                f"{explanation} However, I don't have additional events to show right now. "
-                "Would you like to start a new search with different criteria?"
-            ),
-            source="unavailable",
-        )
-
-    logger.info("DEMO_MODE: Returning sample refined events")
-    demo_events = [
-        EventResult(
-            id="demo-refined-001",
-            title="Sample: Python Columbus",
-            date="2026-01-10T18:30:00",
-            location="CoverMyMeds HQ",
-            category="ai",
-            description="[Demo] Python user group with AI/ML focus",
-            is_free=True,
-            price_amount=None,
-            distance_miles=1.2,
-            url=None,
-        ),
-        EventResult(
-            id="demo-refined-002",
-            title="Sample: Data Science Happy Hour",
-            date="2026-01-10T17:00:00",
-            location="Brewdog Short North",
-            category="ai",
-            description="[Demo] Informal data science networking",
-            is_free=True,
-            price_amount=None,
-            distance_miles=0.8,
-            url=None,
-        ),
-    ]
-
+    # Refinement always returns unavailable since we don't yet have real-time search refinement
     return RefinementOutput(
-        events=demo_events,
-        explanation=explanation + " Here are some sample alternatives (demo mode).",
-        source="demo",
+        events=[],
+        explanation=(
+            f"{explanation} However, I don't have additional events to show right now. "
+            "Would you like to start a new search with different criteria?"
+        ),
+        source="unavailable",
     )
 
 
@@ -335,7 +247,6 @@ You're a helpful events concierge. Present results clearly and learn from user p
 ## CRITICAL GROUNDING RULES
 
 1. **Source Attribution**: Always check the `source` field from search results:
-   - If source is "demo": Say "Here are some example events to show you how this works. These aren't real events."
    - If source is "unavailable": Say "I'm sorry, event search isn't available right now. Please try again later."
    - If source is "eventbrite": Present events normally without qualification.
 

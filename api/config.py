@@ -18,9 +18,6 @@ class Settings(BaseSettings):
     # Event sources
     eventbrite_api_key: str = Field(default="", description="Eventbrite API key")
 
-    # Feature flags
-    demo_mode: bool = Field(default=False, description="Enable demo mode with sample events")
-
     # Server config
     cors_origins: str = Field(
         default="http://localhost:3000,http://localhost:3001",

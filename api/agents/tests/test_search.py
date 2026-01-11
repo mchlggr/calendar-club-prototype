@@ -7,7 +7,6 @@ from api.agents.search import (
     EventResult,
     RefinementInput,
     SearchResult,
-    _get_mock_events,
     refine_results,
     search_events,
 )
@@ -60,14 +59,25 @@ class TestSearchResult:
 
     def test_search_result_with_events(self):
         """Test SearchResult with events."""
-        events = _get_mock_events()
+        events = [
+            EventResult(
+                id="evt-001",
+                title="Real Event",
+                date="2026-01-10T18:00:00",
+                location="Real Venue",
+                category="ai",
+                description="A real event",
+                is_free=True,
+                distance_miles=2.5,
+            )
+        ]
         result = SearchResult(
             events=events,
-            source="demo",
-            message="Demo mode active",
+            source="eventbrite",
+            message=None,
         )
-        assert len(result.events) > 0
-        assert result.source == "demo"
+        assert len(result.events) == 1
+        assert result.source == "eventbrite"
 
     def test_search_result_empty(self):
         """Test SearchResult with no events."""
@@ -83,24 +93,13 @@ class TestSearchResult:
 class TestSearchEventsFunction:
     """Test search_events tool function."""
 
-    def test_demo_mode_returns_mock_events(self):
-        """With DEMO_MODE=true, should return mock events with demo source."""
-        with patch.dict(os.environ, {"DEMO_MODE": "true"}, clear=True):
-            _clear_settings_cache()
-            profile = SearchProfile(location="Columbus, OH")
-            result = search_events(profile)
-
-            assert result.source == "demo"
-            assert len(result.events) > 0
-            assert result.message
-
     def test_no_api_key_returns_unavailable(self):
-        """Without API key and DEMO_MODE=false, should return unavailable."""
-        with patch.dict(os.environ, {"DEMO_MODE": "false"}, clear=True):
+        """Without API key, should return unavailable."""
+        with patch.dict(os.environ, {}, clear=True):
             _clear_settings_cache()
             os.environ.pop("EVENTBRITE_API_KEY", None)
 
-            profile = SearchProfile(location="Columbus, OH")
+            profile = SearchProfile()
             result = search_events(profile)
 
             assert result.source == "unavailable"
@@ -111,57 +110,32 @@ class TestSearchEventsFunction:
 class TestRefineResults:
     """Test refine_results tool function."""
 
-    def test_refine_with_feedback_demo_mode(self):
-        """In demo mode, refinement returns sample events."""
-        with patch.dict(os.environ, {"DEMO_MODE": "true"}, clear=True):
-            _clear_settings_cache()
-            feedback = [
-                EventFeedback(event_id="evt-001", rating=Rating.YES),
-                EventFeedback(event_id="evt-002", rating=Rating.NO, reason="too far"),
-            ]
-            input_data = RefinementInput(feedback=feedback)
-            result = refine_results(input_data)
+    def test_refine_returns_unavailable(self):
+        """Refinement returns unavailable since no real-time refinement yet."""
+        _clear_settings_cache()
+        feedback = [
+            EventFeedback(
+                event_id="evt-001", rating=Rating.NO, reason="too expensive"
+            ),
+        ]
+        input_data = RefinementInput(feedback=feedback)
+        result = refine_results(input_data)
 
-            assert result.source == "demo"
-            assert "closer" in result.explanation.lower()
-            assert result.events
+        assert result.source == "unavailable"
+        assert len(result.events) == 0
+        assert (
+            "search" in result.explanation.lower()
+            or "criteria" in result.explanation.lower()
+        )
 
-    def test_refine_without_demo_mode(self):
-        """Without demo mode, refinement is honest about limitations."""
-        with patch.dict(os.environ, {"DEMO_MODE": "false"}, clear=True):
-            _clear_settings_cache()
-            feedback = [
-                EventFeedback(
-                    event_id="evt-001", rating=Rating.NO, reason="too expensive"
-                ),
-            ]
-            input_data = RefinementInput(feedback=feedback)
-            result = refine_results(input_data)
+    def test_refine_includes_feedback_explanation(self):
+        """Refinement should explain what it learned from feedback."""
+        _clear_settings_cache()
+        feedback = [
+            EventFeedback(event_id="evt-001", rating=Rating.YES),
+            EventFeedback(event_id="evt-002", rating=Rating.NO, reason="too far"),
+        ]
+        input_data = RefinementInput(feedback=feedback)
+        result = refine_results(input_data)
 
-            assert result.source == "unavailable"
-            assert len(result.events) == 0
-            assert (
-                "search" in result.explanation.lower()
-                or "criteria" in result.explanation.lower()
-            )
-
-
-class TestMockEvents:
-    """Test mock event data structure."""
-
-    def test_mock_events_valid(self):
-        """Mock events should be valid EventResult instances."""
-        events = _get_mock_events()
-        assert len(events) >= 3
-        for event in events:
-            assert isinstance(event, EventResult)
-            assert event.id.startswith("evt-")
-
-    def test_mock_events_have_required_fields(self):
-        """Mock events should have all required fields."""
-        events = _get_mock_events()
-        for event in events:
-            assert event.title
-            assert event.date
-            assert event.location
-            assert event.category
+        assert "closer" in result.explanation.lower()
