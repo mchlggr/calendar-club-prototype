@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     # Event sources
     eventbrite_api_key: str = Field(default="", description="Eventbrite API key")
     exa_api_key: str = Field(default="", description="Exa API key for web search")
+    firecrawl_api_key: str = Field(default="", description="Firecrawl API key for web scraping")
 
     # Server config
     cors_origins: str = Field(

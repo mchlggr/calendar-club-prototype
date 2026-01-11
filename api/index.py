@@ -184,9 +184,7 @@ async def stream_chat_response(
 
                     # Emit a message about results from SearchAgent perspective
                     result_message = f"\n\nI found {len(search_result.events)} events for you!"
-                    if search_result.source == "demo":
-                        result_message += " (These are sample events for demonstration.)"
-                    elif search_result.source == "unavailable":
+                    if search_result.source == "unavailable":
                         result_message = "\n\nEvent search is temporarily unavailable. Please try again later."
 
                     for i in range(0, len(result_message), 10):
