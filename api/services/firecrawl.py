@@ -1,76 +1,68 @@
 """
-Firecrawl client for web scraping and Luma event extraction.
+Firecrawl-based web scraping for event discovery.
 
-Uses the Firecrawl API to scrape web pages and extract structured data.
-Includes specialized extractor for Luma (lu.ma) event pages.
+Provides extractors for various event platforms using Firecrawl's
+structured extraction capabilities.
 """
 
-import json
 import logging
+import os
 import re
 from datetime import datetime
 from typing import Any
+from urllib.parse import urljoin, urlparse
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
+# Firecrawl API configuration
+FIRECRAWL_API_URL = "https://api.firecrawl.dev/v1"
 
-class LumaEvent(BaseModel):
-    """Parsed event from a Luma page."""
 
-    id: str = Field(description="Event ID extracted from URL")
+class ScrapedEvent(BaseModel):
+    """Event data extracted from a web page."""
+
+    source: str
+    event_id: str
     title: str
-    description: str = ""
+    description: str
     start_time: datetime | None = None
     end_time: datetime | None = None
-    location: str | None = None
-    host_name: str | None = None
-    is_online: bool = False
+    venue_name: str | None = None
+    venue_address: str | None = None
+    category: str = "community"
+    is_free: bool = False
+    price_amount: int | None = None
     url: str
-    cover_image_url: str | None = None
-    ticket_price: str | None = None  # "Free" or "$X"
-
-
-class ScrapeResult(BaseModel):
-    """Result from a Firecrawl scrape operation."""
-
-    markdown: str | None = None
-    html: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    success: bool = True
-    error: str | None = None
+    logo_url: str | None = None
+    raw_data: dict[str, Any] | None = None
 
 
 class FirecrawlClient:
-    """Async client for Firecrawl API.
+    """
+    Async client for Firecrawl API.
 
-    Provides methods to scrape web pages and return content in
-    formats suitable for LLM processing.
+    Firecrawl provides web scraping with LLM-based extraction.
     """
 
-    API_BASE_URL = "https://api.firecrawl.dev/v1"
-
-    def __init__(self, api_key: str):
-        """Initialize the Firecrawl client.
-
-        Args:
-            api_key: Firecrawl API key (fc-...)
-        """
-        self.api_key = api_key
+    def __init__(self, api_key: str | None = None):
+        self.api_key = api_key or os.getenv("FIRECRAWL_API_KEY")
         self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create the HTTP client."""
         if self._client is None:
+            if not self.api_key:
+                raise ValueError("FIRECRAWL_API_KEY not configured")
             self._client = httpx.AsyncClient(
-                base_url=self.API_BASE_URL,
+                base_url=FIRECRAWL_API_URL,
                 headers={
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json",
                 },
-                timeout=60.0,  # Scraping can take a while
+                timeout=60.0,
             )
         return self._client
 
@@ -84,354 +76,298 @@ class FirecrawlClient:
         self,
         url: str,
         formats: list[str] | None = None,
-        wait_for: int | None = None,
-    ) -> ScrapeResult:
-        """Scrape a single URL.
+        extract_schema: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Scrape a single URL.
 
         Args:
             url: The URL to scrape
-            formats: Output formats to request (default: ["markdown"])
-            wait_for: Milliseconds to wait for page to load (for JS-heavy pages)
+            formats: Output formats (e.g., ["markdown", "html", "extract"])
+            extract_schema: JSON schema for structured extraction
 
         Returns:
-            ScrapeResult with markdown/html content and metadata
+            Scraped content with requested formats
         """
-        if formats is None:
-            formats = ["markdown"]
+        client = await self._get_client()
 
+        payload: dict[str, Any] = {"url": url}
+        if formats:
+            payload["formats"] = formats
+        if extract_schema:
+            payload["extract"] = {"schema": extract_schema}
+
+        response = await client.post("/scrape", json=payload)
+        response.raise_for_status()
+
+        data = response.json()
+        if not data.get("success"):
+            raise ValueError(f"Scrape failed: {data.get('error', 'Unknown error')}")
+
+        return data.get("data", {})
+
+    async def crawl(
+        self,
+        url: str,
+        max_depth: int = 2,
+        limit: int = 10,
+        include_patterns: list[str] | None = None,
+        exclude_patterns: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Crawl a website starting from the given URL.
+
+        Args:
+            url: Starting URL
+            max_depth: Maximum crawl depth
+            limit: Maximum number of pages to crawl
+            include_patterns: URL patterns to include
+            exclude_patterns: URL patterns to exclude
+
+        Returns:
+            List of scraped page data
+        """
         client = await self._get_client()
 
         payload: dict[str, Any] = {
             "url": url,
-            "formats": formats,
+            "maxDepth": max_depth,
+            "limit": limit,
         }
+        if include_patterns:
+            payload["includePaths"] = include_patterns
+        if exclude_patterns:
+            payload["excludePaths"] = exclude_patterns
 
-        if wait_for:
-            payload["waitFor"] = wait_for
+        response = await client.post("/crawl", json=payload)
+        response.raise_for_status()
+
+        data = response.json()
+        if not data.get("success"):
+            raise ValueError(f"Crawl failed: {data.get('error', 'Unknown error')}")
+
+        return data.get("data", [])
+
+
+class PoshExtractor:
+    """
+    Extractor for Posh (posh.vip) events.
+
+    Posh is a social events platform popular for nightlife,
+    parties, and social gatherings.
+    """
+
+    SOURCE_NAME = "posh"
+    BASE_URL = "https://posh.vip"
+
+    # Schema for extracting event data from Posh pages
+    EVENT_SCHEMA = {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "description": "Event title"},
+            "description": {"type": "string", "description": "Event description"},
+            "date": {"type": "string", "description": "Event date (e.g., 'Saturday, Jan 15')"},
+            "time": {"type": "string", "description": "Event time (e.g., '10 PM - 2 AM')"},
+            "venue_name": {"type": "string", "description": "Venue name"},
+            "venue_address": {"type": "string", "description": "Venue address"},
+            "price": {"type": "string", "description": "Ticket price (e.g., 'Free', '$20')"},
+            "image_url": {"type": "string", "description": "Event image URL"},
+            "organizer": {"type": "string", "description": "Event organizer name"},
+        },
+        "required": ["title"],
+    }
+
+    def __init__(self, client: FirecrawlClient | None = None):
+        self.client = client or FirecrawlClient()
+
+    async def close(self) -> None:
+        """Close the client."""
+        await self.client.close()
+
+    def _extract_event_id(self, url: str) -> str:
+        """Extract event ID from Posh URL."""
+        # Posh URLs are typically: https://posh.vip/e/event-slug-123abc
+        parsed = urlparse(url)
+        path = parsed.path.strip("/")
+        if path.startswith("e/"):
+            return path[2:]  # Remove 'e/' prefix
+        return path or url
+
+    def _parse_datetime(
+        self, date_str: str | None, time_str: str | None
+    ) -> tuple[datetime | None, datetime | None]:
+        """Parse Posh date/time strings into datetime objects."""
+        if not date_str:
+            return None, None
 
         try:
-            response = await client.post("/scrape", json=payload)
-            response.raise_for_status()
-            data = response.json()
+            import dateparser
 
-            if not data.get("success"):
-                error_msg = data.get("error", "Unknown scrape error")
-                logger.warning("Firecrawl scrape failed for %s: %s", url, error_msg)
-                return ScrapeResult(success=False, error=error_msg)
+            # Combine date and time for parsing
+            combined = date_str
+            if time_str:
+                # Extract start time (before any dash or "to")
+                time_parts = re.split(r"\s*[-–to]\s*", time_str, maxsplit=1)
+                start_time = time_parts[0].strip()
+                combined = f"{date_str} {start_time}"
 
-            result_data = data.get("data", {})
-            return ScrapeResult(
-                markdown=result_data.get("markdown"),
-                html=result_data.get("html"),
-                metadata=result_data.get("metadata", {}),
-                success=True,
+            start_dt = dateparser.parse(
+                combined,
+                settings={"PREFER_DATES_FROM": "future"},
             )
 
-        except httpx.HTTPStatusError as e:
-            error_msg = f"HTTP {e.response.status_code}: {e.response.text[:200]}"
-            logger.error("Firecrawl HTTP error for %s: %s", url, error_msg)
-            return ScrapeResult(success=False, error=error_msg)
-        except httpx.HTTPError as e:
-            logger.error("Firecrawl request error for %s: %s", url, e)
-            return ScrapeResult(success=False, error=str(e))
+            # Parse end time if available
+            end_dt = None
+            if time_str and ("-" in time_str or "–" in time_str or " to " in time_str.lower()):
+                time_parts = re.split(r"\s*[-–]\s*|\s+to\s+", time_str, flags=re.IGNORECASE)
+                if len(time_parts) > 1:
+                    end_time = time_parts[1].strip()
+                    end_combined = f"{date_str} {end_time}"
+                    end_dt = dateparser.parse(
+                        end_combined,
+                        settings={"PREFER_DATES_FROM": "future"},
+                    )
 
-
-class LumaExtractor:
-    """Extracts structured event data from Luma (lu.ma) pages.
-
-    Luma pages contain JSON-LD structured data and predictable HTML patterns
-    that we can parse to extract event information.
-    """
-
-    # Pattern to match lu.ma or luma.com event URLs
-    URL_PATTERN = re.compile(
-        r"https?://(?:lu\.ma|luma\.com)/(?P<event_id>[a-zA-Z0-9_-]+)"
-    )
-
-    @classmethod
-    def is_luma_url(cls, url: str) -> bool:
-        """Check if a URL is a Luma event page."""
-        return bool(cls.URL_PATTERN.match(url))
-
-    @classmethod
-    def extract_event_id(cls, url: str) -> str | None:
-        """Extract the event ID from a Luma URL."""
-        match = cls.URL_PATTERN.match(url)
-        if match:
-            return match.group("event_id")
-        return None
-
-    @classmethod
-    def extract_from_markdown(cls, markdown: str, url: str) -> LumaEvent | None:
-        """Extract event data from scraped markdown content.
-
-        Luma pages typically include structured data that Firecrawl preserves.
-        This method parses that content to extract event details.
-
-        Args:
-            markdown: Markdown content from Firecrawl scrape
-            url: Original URL (used for ID extraction)
-
-        Returns:
-            LumaEvent if extraction successful, None otherwise
-        """
-        event_id = cls.extract_event_id(url)
-        if not event_id:
-            logger.warning("Could not extract event ID from URL: %s", url)
-            return None
-
-        try:
-            # Try to find JSON-LD data in the markdown
-            event_data = cls._extract_json_ld(markdown)
-            if event_data:
-                return cls._parse_json_ld(event_data, event_id, url)
-
-            # Fall back to markdown parsing
-            return cls._parse_markdown_content(markdown, event_id, url)
+            return start_dt, end_dt
 
         except Exception as e:
-            logger.error("Error extracting Luma event from %s: %s", url, e)
+            logger.warning("Failed to parse datetime: %s %s - %s", date_str, time_str, e)
+            return None, None
+
+    def _parse_price(self, price_str: str | None) -> tuple[bool, int | None]:
+        """Parse price string into is_free and price_amount."""
+        if not price_str:
+            return True, None
+
+        price_lower = price_str.lower().strip()
+        if price_lower in ("free", "no cover", "complimentary", ""):
+            return True, None
+
+        # Extract numeric price
+        match = re.search(r"\$?(\d+(?:\.\d{2})?)", price_str)
+        if match:
+            price = float(match.group(1))
+            return False, int(price * 100)  # Store in cents
+
+        return True, None
+
+    async def extract_event(self, url: str) -> ScrapedEvent | None:
+        """
+        Extract event data from a Posh event page.
+
+        Args:
+            url: Posh event URL
+
+        Returns:
+            ScrapedEvent if extraction successful, None otherwise
+        """
+        try:
+            data = await self.client.scrape(
+                url=url,
+                formats=["extract"],
+                extract_schema=self.EVENT_SCHEMA,
+            )
+
+            extracted = data.get("extract", {})
+            if not extracted.get("title"):
+                logger.warning("No title found in Posh event: %s", url)
+                return None
+
+            start_dt, end_dt = self._parse_datetime(
+                extracted.get("date"),
+                extracted.get("time"),
+            )
+            is_free, price_amount = self._parse_price(extracted.get("price"))
+
+            return ScrapedEvent(
+                source=self.SOURCE_NAME,
+                event_id=self._extract_event_id(url),
+                title=extracted["title"],
+                description=extracted.get("description", ""),
+                start_time=start_dt,
+                end_time=end_dt,
+                venue_name=extracted.get("venue_name"),
+                venue_address=extracted.get("venue_address"),
+                category="nightlife",  # Posh is primarily nightlife/social
+                is_free=is_free,
+                price_amount=price_amount,
+                url=url,
+                logo_url=extracted.get("image_url"),
+                raw_data=extracted,
+            )
+
+        except Exception as e:
+            logger.error("Failed to extract Posh event from %s: %s", url, e)
             return None
 
-    @classmethod
-    def _extract_json_ld(cls, markdown: str) -> dict[str, Any] | None:
-        """Try to extract JSON-LD event data from markdown.
-
-        Firecrawl may preserve script tags or metadata containing JSON-LD.
+    async def discover_events(
+        self,
+        city: str = "columbus",
+        limit: int = 20,
+    ) -> list[ScrapedEvent]:
         """
-        # Look for JSON-LD pattern in markdown
-        json_ld_pattern = re.compile(
-            r'\{"@context".*?"@type"\s*:\s*"Event".*?\}',
-            re.DOTALL,
-        )
-        match = json_ld_pattern.search(markdown)
-        if match:
-            try:
-                return json.loads(match.group())
-            except json.JSONDecodeError:
-                pass
+        Discover events from Posh for a given city.
 
-        # Look for Event schema pattern
-        event_pattern = re.compile(
-            r'```json\s*(\{[^`]*"@type"\s*:\s*"Event"[^`]*\})\s*```',
-            re.DOTALL,
-        )
-        match = event_pattern.search(markdown)
-        if match:
-            try:
-                return json.loads(match.group(1))
-            except json.JSONDecodeError:
-                pass
+        Args:
+            city: City slug (e.g., "columbus", "new-york")
+            limit: Maximum number of events to return
 
-        return None
-
-    @classmethod
-    def _parse_json_ld(
-        cls, data: dict[str, Any], event_id: str, url: str
-    ) -> LumaEvent:
-        """Parse JSON-LD event data into LumaEvent."""
-        # Parse dates
-        start_time = None
-        end_time = None
-        if data.get("startDate"):
-            try:
-                start_time = datetime.fromisoformat(
-                    data["startDate"].replace("Z", "+00:00")
-                )
-            except ValueError:
-                pass
-        if data.get("endDate"):
-            try:
-                end_time = datetime.fromisoformat(
-                    data["endDate"].replace("Z", "+00:00")
-                )
-            except ValueError:
-                pass
-
-        # Parse location
-        location = None
-        is_online = False
-        loc_data = data.get("location", {})
-        if isinstance(loc_data, dict):
-            if loc_data.get("@type") == "VirtualLocation":
-                is_online = True
-                location = loc_data.get("url") or "Online"
-            else:
-                address = loc_data.get("address", {})
-                if isinstance(address, dict):
-                    parts = [
-                        address.get("streetAddress"),
-                        address.get("addressLocality"),
-                        address.get("addressRegion"),
-                    ]
-                    location = ", ".join(p for p in parts if p)
-                elif isinstance(address, str):
-                    location = address
-                if not location:
-                    location = loc_data.get("name")
-        elif isinstance(loc_data, str):
-            location = loc_data
-
-        # Parse organizer
-        host_name = None
-        organizer = data.get("organizer", {})
-        if isinstance(organizer, dict):
-            host_name = organizer.get("name")
-        elif isinstance(organizer, str):
-            host_name = organizer
-
-        # Parse offers for ticket price
-        ticket_price = None
-        offers = data.get("offers", {})
-        if isinstance(offers, dict):
-            price = offers.get("price")
-            if price == 0 or price == "0":
-                ticket_price = "Free"
-            elif price:
-                currency = offers.get("priceCurrency", "USD")
-                ticket_price = f"${price}" if currency == "USD" else f"{price} {currency}"
-        elif isinstance(offers, list) and offers:
-            first_offer = offers[0]
-            if isinstance(first_offer, dict):
-                price = first_offer.get("price")
-                if price == 0 or price == "0":
-                    ticket_price = "Free"
-                elif price:
-                    currency = first_offer.get("priceCurrency", "USD")
-                    ticket_price = f"${price}" if currency == "USD" else f"{price} {currency}"
-
-        return LumaEvent(
-            id=event_id,
-            title=data.get("name", "Untitled Event"),
-            description=data.get("description", ""),
-            start_time=start_time,
-            end_time=end_time,
-            location=location,
-            host_name=host_name,
-            is_online=is_online,
-            url=url,
-            cover_image_url=data.get("image"),
-            ticket_price=ticket_price,
-        )
-
-    @classmethod
-    def _parse_markdown_content(
-        cls, markdown: str, event_id: str, url: str
-    ) -> LumaEvent:
-        """Parse event data directly from markdown when JSON-LD is unavailable.
-
-        This is a fallback that uses heuristics to extract data from
-        the markdown structure.
+        Returns:
+            List of discovered events
         """
-        lines = markdown.strip().split("\n")
+        try:
+            # Crawl the city's event listing page
+            city_url = urljoin(self.BASE_URL, f"/c/{city}")
 
-        # First non-empty line is often the title
-        title = "Untitled Event"
-        for line in lines:
-            line = line.strip()
-            if line and not line.startswith(("http", "!", "[", "#")):
-                # Remove markdown header markers
-                title = re.sub(r"^#+\s*", "", line)
-                break
-            # Handle markdown headers
-            if line.startswith("#"):
-                title = re.sub(r"^#+\s*", "", line)
-                break
+            pages = await self.client.crawl(
+                url=city_url,
+                max_depth=1,
+                limit=limit + 5,  # Get extra in case some fail
+                include_patterns=["/e/*"],  # Only event pages
+            )
 
-        # Extract description (first paragraph after title)
-        description = ""
-        in_description = False
-        for line in lines[1:]:
-            line = line.strip()
-            if not line:
-                if in_description:
-                    break
-                continue
-            if not line.startswith(("#", "!", "[", "http", "|", "-", "*")):
-                in_description = True
-                description += line + " "
-        description = description.strip()[:500]
-
-        # Try to find date patterns
-        start_time = cls._extract_date_from_text(markdown)
-
-        # Try to find location
-        location = cls._extract_location_from_text(markdown)
-
-        return LumaEvent(
-            id=event_id,
-            title=title,
-            description=description,
-            start_time=start_time,
-            location=location,
-            url=url,
-        )
-
-    @classmethod
-    def _extract_date_from_text(cls, text: str) -> datetime | None:
-        """Try to extract a date from text content."""
-        # Common date patterns
-        patterns = [
-            # ISO format
-            r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})",
-            # "January 15, 2025 at 7:00 PM"
-            r"([A-Z][a-z]+ \d{1,2},? \d{4}(?:\s+at\s+\d{1,2}:\d{2}\s*(?:AM|PM)?)?)",
-            # "Jan 15 2025"
-            r"([A-Z][a-z]{2} \d{1,2},? \d{4})",
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                date_str = match.group(1)
-                try:
-                    # Try ISO format first
-                    if "T" in date_str:
-                        return datetime.fromisoformat(date_str)
-                    # Try natural language parsing
-                    # This is simplified - could use dateparser for better results
-                except ValueError:
+            events = []
+            for page in pages:
+                url = page.get("url", "")
+                if "/e/" not in url:
                     continue
 
-        return None
+                event = await self.extract_event(url)
+                if event:
+                    events.append(event)
+                    if len(events) >= limit:
+                        break
 
-    @classmethod
-    def _extract_location_from_text(cls, text: str) -> str | None:
-        """Try to extract a location from text content."""
-        # Look for common location patterns
-        patterns = [
-            r"(?:Location|Venue|Where)[:\s]+([^\n]+)",
-            r"(?:at|@)\s+([A-Z][^\n,]+(?:,\s*[A-Z][a-z]+)?)",
-        ]
+            logger.info("Discovered %d Posh events for %s", len(events), city)
+            return events
 
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                location = match.group(1).strip()
-                if len(location) > 5:  # Avoid false positives
-                    return location[:200]
-
-        return None
+        except Exception as e:
+            logger.error("Failed to discover Posh events for %s: %s", city, e)
+            return []
 
 
-# Singleton client instance
+# Singleton instances
 _firecrawl_client: FirecrawlClient | None = None
+_posh_extractor: PoshExtractor | None = None
 
 
-def get_firecrawl_client(api_key: str | None = None) -> FirecrawlClient | None:
-    """Get the Firecrawl client singleton.
-
-    Args:
-        api_key: Optional API key. If not provided, returns None
-                 (client must be initialized with a key).
-
-    Returns:
-        FirecrawlClient instance or None if no API key available.
-    """
+def get_firecrawl_client() -> FirecrawlClient:
+    """Get the singleton Firecrawl client."""
     global _firecrawl_client
     if _firecrawl_client is None:
-        if api_key:
-            _firecrawl_client = FirecrawlClient(api_key=api_key)
-        else:
-            return None
+        _firecrawl_client = FirecrawlClient()
     return _firecrawl_client
+
+
+def get_posh_extractor() -> PoshExtractor:
+    """Get the singleton Posh extractor."""
+    global _posh_extractor
+    if _posh_extractor is None:
+        _posh_extractor = PoshExtractor()
+    return _posh_extractor
+
+
+# Aliases for backward compatibility
+LumaEvent = ScrapedEvent
+LumaExtractor = PoshExtractor
+

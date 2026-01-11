@@ -1,290 +1,293 @@
-"""Tests for the event cache service."""
+"""Tests for EventCache."""
 
 import tempfile
-from datetime import UTC, datetime, timedelta
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
 
-from api.services.event_cache import CachedEvent, EventCacheService
+from api.services.event_cache import EventCache
 
 
-@pytest.fixture
-def temp_db():
-    """Create a temporary database for testing."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-        yield Path(f.name)
+class TestEventCache:
+    """Test cases for EventCache."""
 
+    @pytest.fixture
+    def cache(self) -> Generator[EventCache]:
+        """Create a cache with a temporary database."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test_cache.db"
+            yield EventCache(db_path=db_path, ttl_hours=24)
 
-@pytest.fixture
-def cache(temp_db):
-    """Create a cache service with a temporary database."""
-    return EventCacheService(db_path=temp_db, ttl_hours=24)
+    @pytest.fixture
+    def sample_event(self) -> dict:
+        """Create a sample event for testing."""
+        return {
+            "event_id": "evt-123",
+            "title": "Tech Meetup",
+            "date": "2026-01-15T18:00:00+00:00",
+            "location": "Downtown Convention Center",
+            "category": "tech",
+            "description": "A meetup for tech enthusiasts",
+            "is_free": True,
+            "url": "https://example.com/event/123",
+        }
 
+    def test_put_and_get(self, cache: EventCache, sample_event: dict) -> None:
+        """Test storing and retrieving an event."""
+        cache.put(source="exa", **sample_event)
 
-class TestCachedEventModel:
-    """Tests for CachedEvent model."""
+        result = cache.get("exa", "evt-123")
 
-    def test_create_cached_event(self):
-        """Test creating a cached event with required fields."""
-        event = CachedEvent(
-            id="luma:test123",
-            source="luma",
-            external_id="test123",
-            title="Test Event",
-        )
-        assert event.id == "luma:test123"
-        assert event.source == "luma"
-        assert event.external_id == "test123"
-        assert event.title == "Test Event"
-        assert event.is_free is True  # Default
-        assert event.category == "community"  # Default
+        assert result is not None
+        assert result.event_id == "evt-123"
+        assert result.title == "Tech Meetup"
+        assert result.source == "exa"
+        assert result.is_free is True
 
-    def test_create_cached_event_with_all_fields(self):
-        """Test creating a cached event with all optional fields."""
-        now = datetime.now(UTC)
-        event = CachedEvent(
-            id="eventbrite:456",
-            source="eventbrite",
-            external_id="456",
-            title="Full Event",
-            description="A complete event description",
-            start_time=now,
-            end_time=now + timedelta(hours=2),
-            location="123 Main St, Columbus, OH",
-            url="https://eventbrite.com/e/456",
-            category="tech",
-            is_free=False,
-            price_amount=25,
-            host_name="Tech Meetup",
-            cover_image_url="https://example.com/image.jpg",
-            raw_data={"original": "data"},
-        )
-        assert event.description == "A complete event description"
-        assert event.is_free is False
-        assert event.price_amount == 25
+    def test_get_nonexistent(self, cache: EventCache) -> None:
+        """Test getting a nonexistent event returns None."""
+        result = cache.get("exa", "nonexistent")
+        assert result is None
 
+    def test_composite_key_different_sources(
+        self, cache: EventCache, sample_event: dict
+    ) -> None:
+        """Test that same event_id with different sources are distinct."""
+        cache.put(source="exa", **sample_event)
 
-class TestEventCacheService:
-    """Tests for EventCacheService."""
+        exa_event = sample_event.copy()
+        exa_event["title"] = "Exa Event"
+        cache.put(source="exa", **exa_event)
 
-    def test_upsert_and_get_by_source(self, cache):
-        """Test inserting and retrieving events by source."""
-        event = CachedEvent(
-            id="luma:abc",
-            source="luma",
-            external_id="abc",
-            title="Luma Event",
-            start_time=datetime.now(UTC),
-        )
-        cache.upsert(event)
+        firecrawl_event = sample_event.copy()
+        firecrawl_event["title"] = "Firecrawl Event"
+        cache.put(source="firecrawl", **firecrawl_event)
 
-        events = cache.get_by_source("luma")
-        assert len(events) == 1
-        assert events[0].title == "Luma Event"
+        exa_result = cache.get("exa", "evt-123")
+        firecrawl_result = cache.get("firecrawl", "evt-123")
 
-    def test_upsert_updates_existing(self, cache):
-        """Test that upsert updates existing events."""
-        event1 = CachedEvent(
-            id="luma:abc",
-            source="luma",
-            external_id="abc",
-            title="Original Title",
-        )
-        cache.upsert(event1)
+        assert exa_result is not None
+        assert firecrawl_result is not None
+        assert exa_result.title == "Exa Event"
+        assert firecrawl_result.title == "Firecrawl Event"
 
-        event2 = CachedEvent(
-            id="luma:abc",
-            source="luma",
-            external_id="abc",
-            title="Updated Title",
-        )
-        cache.upsert(event2)
+    def test_upsert_updates_existing(
+        self, cache: EventCache, sample_event: dict
+    ) -> None:
+        """Test that putting an existing event updates it."""
+        cache.put(source="exa", **sample_event)
 
-        events = cache.get_by_source("luma")
-        assert len(events) == 1
-        assert events[0].title == "Updated Title"
+        updated_event = sample_event.copy()
+        updated_event["title"] = "Updated Meetup"
+        cache.put(source="exa", **updated_event)
 
-    def test_upsert_many(self, cache):
-        """Test bulk inserting events."""
-        events = [
-            CachedEvent(
-                id=f"luma:{i}",
-                source="luma",
-                external_id=str(i),
+        result = cache.get("exa", "evt-123")
+
+        assert result is not None
+        assert result.title == "Updated Meetup"
+        assert cache.count("exa") == 1
+
+    def test_get_many(self, cache: EventCache) -> None:
+        """Test retrieving multiple events."""
+        for i in range(5):
+            cache.put(
+                source="exa",
+                event_id=f"evt-{i}",
                 title=f"Event {i}",
+                date="2026-01-15T18:00:00+00:00",
+                location="Location",
+                category="tech",
+                description="Description",
+                is_free=True,
             )
-            for i in range(5)
+
+        results = cache.get_many("exa", ["evt-0", "evt-2", "evt-4", "evt-999"])
+
+        assert len(results) == 3
+        event_ids = {e.event_id for e in results}
+        assert event_ids == {"evt-0", "evt-2", "evt-4"}
+
+    def test_put_many(self, cache: EventCache) -> None:
+        """Test storing multiple events at once."""
+        events = [
+            {
+                "event_id": f"evt-{i}",
+                "title": f"Event {i}",
+                "date": "2026-01-15T18:00:00+00:00",
+                "location": "Location",
+                "category": "tech",
+                "description": "Description",
+                "is_free": i % 2 == 0,
+            }
+            for i in range(10)
         ]
-        count = cache.upsert_many(events)
-        assert count == 5
-        assert cache.count("luma") == 5
 
-    def test_search_by_date_range(self, cache):
-        """Test searching events by date range."""
-        now = datetime.now(UTC)
+        count = cache.put_many("firecrawl", events)
 
-        # Event in the past
-        past_event = CachedEvent(
-            id="luma:past",
-            source="luma",
-            external_id="past",
-            title="Past Event",
-            start_time=now - timedelta(days=7),
+        assert count == 10
+        assert cache.count("firecrawl") == 10
+
+    def test_clear_source(self, cache: EventCache) -> None:
+        """Test clearing all events from a specific source."""
+        cache.put(
+            source="exa",
+            event_id="evt-1",
+            title="Exa Event",
+            date="2026-01-15T18:00:00+00:00",
+            location="Location",
+            category="tech",
+            description="Description",
+            is_free=True,
         )
-        cache.upsert(past_event)
-
-        # Event in the future
-        future_event = CachedEvent(
-            id="luma:future",
-            source="luma",
-            external_id="future",
-            title="Future Event",
-            start_time=now + timedelta(days=7),
-        )
-        cache.upsert(future_event)
-
-        # Search for future events only
-        results = cache.search(start_after=now)
-        assert len(results) == 1
-        assert results[0].title == "Future Event"
-
-    def test_search_by_sources(self, cache):
-        """Test filtering search by multiple sources."""
-        cache.upsert(
-            CachedEvent(
-                id="luma:1",
-                source="luma",
-                external_id="1",
-                title="Luma Event",
-            )
-        )
-        cache.upsert(
-            CachedEvent(
-                id="eventbrite:1",
-                source="eventbrite",
-                external_id="1",
-                title="Eventbrite Event",
-            )
-        )
-        cache.upsert(
-            CachedEvent(
-                id="other:1",
-                source="other",
-                external_id="1",
-                title="Other Event",
-            )
+        cache.put(
+            source="firecrawl",
+            event_id="evt-2",
+            title="Firecrawl Event",
+            date="2026-01-15T18:00:00+00:00",
+            location="Location",
+            category="tech",
+            description="Description",
+            is_free=True,
         )
 
-        results = cache.search(sources=["luma", "eventbrite"])
-        assert len(results) == 2
-        titles = {e.title for e in results}
-        assert "Luma Event" in titles
-        assert "Eventbrite Event" in titles
+        deleted = cache.clear_source("exa")
 
-    def test_search_by_location(self, cache):
-        """Test searching events by location substring."""
-        cache.upsert(
-            CachedEvent(
-                id="luma:columbus",
-                source="luma",
-                external_id="columbus",
-                title="Columbus Event",
-                location="123 High St, Columbus, OH",
-            )
-        )
-        cache.upsert(
-            CachedEvent(
-                id="luma:nyc",
-                source="luma",
-                external_id="nyc",
-                title="NYC Event",
-                location="456 Broadway, New York, NY",
-            )
-        )
-
-        results = cache.search(location_contains="columbus")
-        assert len(results) == 1
-        assert results[0].title == "Columbus Event"
-
-    def test_expired_events_excluded_by_default(self, cache):
-        """Test that expired events are excluded from searches."""
-        # Create event with expired TTL
-        expired_event = CachedEvent(
-            id="luma:expired",
-            source="luma",
-            external_id="expired",
-            title="Expired Event",
-            expires_at=datetime.now(UTC) - timedelta(hours=1),
-        )
-        cache.upsert(expired_event)
-
-        # Should not appear in normal search
-        results = cache.search()
-        assert len(results) == 0
-
-        # Should appear with include_expired=True
-        results = cache.search(include_expired=True)
-        assert len(results) == 1
-
-    def test_delete_expired(self, cache):
-        """Test deleting expired events."""
-        # Add expired event
-        expired_event = CachedEvent(
-            id="luma:expired",
-            source="luma",
-            external_id="expired",
-            title="Expired Event",
-            expires_at=datetime.now(UTC) - timedelta(hours=1),
-        )
-        cache.upsert(expired_event)
-
-        # Add valid event
-        valid_event = CachedEvent(
-            id="luma:valid",
-            source="luma",
-            external_id="valid",
-            title="Valid Event",
-            expires_at=datetime.now(UTC) + timedelta(hours=24),
-        )
-        cache.upsert(valid_event)
-
-        deleted = cache.delete_expired()
         assert deleted == 1
-        assert cache.count() == 1
+        assert cache.get("exa", "evt-1") is None
+        assert cache.get("firecrawl", "evt-2") is not None
 
-    def test_clear_all(self, cache):
-        """Test clearing all events."""
-        for i in range(3):
-            cache.upsert(
-                CachedEvent(
-                    id=f"luma:{i}",
-                    source="luma",
-                    external_id=str(i),
-                    title=f"Event {i}",
-                )
-            )
-        assert cache.count() == 3
+    def test_clear_all(self, cache: EventCache) -> None:
+        """Test clearing all cached events."""
+        cache.put(
+            source="exa",
+            event_id="evt-1",
+            title="Event",
+            date="2026-01-15T18:00:00+00:00",
+            location="Location",
+            category="tech",
+            description="Description",
+            is_free=True,
+        )
+        cache.put(
+            source="firecrawl",
+            event_id="evt-2",
+            title="Event",
+            date="2026-01-15T18:00:00+00:00",
+            location="Location",
+            category="tech",
+            description="Description",
+            is_free=True,
+        )
 
-        deleted = cache.clear()
-        assert deleted == 3
+        deleted = cache.clear_all()
+
+        assert deleted == 2
         assert cache.count() == 0
 
-    def test_clear_by_source(self, cache):
-        """Test clearing events from a specific source."""
-        cache.upsert(
-            CachedEvent(id="luma:1", source="luma", external_id="1", title="Luma 1")
+    def test_count(self, cache: EventCache) -> None:
+        """Test counting cached events."""
+        assert cache.count() == 0
+
+        cache.put(
+            source="exa",
+            event_id="evt-1",
+            title="Event",
+            date="2026-01-15T18:00:00+00:00",
+            location="Location",
+            category="tech",
+            description="Description",
+            is_free=True,
         )
-        cache.upsert(
-            CachedEvent(
-                id="eventbrite:1",
-                source="eventbrite",
-                external_id="1",
-                title="EB 1",
-            )
+        cache.put(
+            source="exa",
+            event_id="evt-2",
+            title="Event",
+            date="2026-01-15T18:00:00+00:00",
+            location="Location",
+            category="tech",
+            description="Description",
+            is_free=True,
+        )
+        cache.put(
+            source="firecrawl",
+            event_id="evt-3",
+            title="Event",
+            date="2026-01-15T18:00:00+00:00",
+            location="Location",
+            category="tech",
+            description="Description",
+            is_free=True,
         )
 
-        deleted = cache.clear(source="luma")
-        assert deleted == 1
-        assert cache.count("luma") == 0
-        assert cache.count("eventbrite") == 1
+        assert cache.count() == 3
+        assert cache.count("exa") == 2
+        assert cache.count("firecrawl") == 1
+
+    def test_raw_data_storage(self, cache: EventCache) -> None:
+        """Test storing and retrieving raw_data."""
+        raw_data = {"original_source": "api", "extra_field": "value"}
+
+        cache.put(
+            source="exa",
+            event_id="evt-1",
+            title="Event",
+            date="2026-01-15T18:00:00+00:00",
+            location="Location",
+            category="tech",
+            description="Description",
+            is_free=True,
+            raw_data=raw_data,
+        )
+
+        result = cache.get("exa", "evt-1")
+
+        assert result is not None
+        assert result.raw_data == raw_data
+
+
+class TestEventCacheExpiry:
+    """Test TTL and expiry functionality."""
+
+    def test_expired_entry_returns_none(self) -> None:
+        """Test that expired entries are not returned."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test_cache.db"
+            cache = EventCache(db_path=db_path, ttl_hours=0)
+
+            cache.put(
+                source="exa",
+                event_id="evt-1",
+                title="Event",
+                date="2026-01-15T18:00:00+00:00",
+                location="Location",
+                category="tech",
+                description="Description",
+                is_free=True,
+            )
+
+            result = cache.get("exa", "evt-1")
+
+            assert result is None
+
+    def test_clear_expired(self) -> None:
+        """Test clearing expired entries."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test_cache.db"
+            cache = EventCache(db_path=db_path, ttl_hours=0)
+
+            cache.put(
+                source="exa",
+                event_id="evt-1",
+                title="Event",
+                date="2026-01-15T18:00:00+00:00",
+                location="Location",
+                category="tech",
+                description="Description",
+                is_free=True,
+            )
+
+            deleted = cache.clear_expired()
+
+            assert deleted == 1
+            assert cache.count() == 0
