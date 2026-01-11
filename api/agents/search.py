@@ -16,6 +16,7 @@ from api.config import get_settings
 from api.models import EventFeedback, SearchProfile
 from api.services import EventSource, event_registry, get_eventbrite_client
 from api.services.event_cache import CachedEvent, get_event_cache
+from api.services.meetup import get_meetup_client
 
 logger = logging.getLogger(__name__)
 
@@ -203,6 +204,69 @@ def _is_luma_available() -> bool:
     return True  # Cache is always available
 
 
+def _is_meetup_available() -> bool:
+    """Check if Meetup API is configured."""
+    settings = get_settings()
+    return bool(settings.meetup_access_token)
+
+
+async def _fetch_meetup_events(profile: SearchProfile) -> list[EventResult]:
+    """Fetch events from Meetup GraphQL API."""
+    client = get_meetup_client()
+
+    # Build query from profile categories
+    query = "tech"  # Default query
+    if profile.categories:
+        # Use first category as query term
+        query = profile.categories[0]
+
+    # Parse time window
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+    if profile.time_window:
+        start_value = profile.time_window.start
+        end_value = profile.time_window.end
+        if isinstance(start_value, str):
+            start_date = datetime.fromisoformat(start_value)
+        else:
+            start_date = start_value
+        if isinstance(end_value, str):
+            end_date = datetime.fromisoformat(end_value)
+        else:
+            end_date = end_value
+
+    events = await client.search_events(
+        query=query,
+        start_date=start_date,
+        end_date=end_date,
+        limit=10,
+    )
+
+    # Convert to EventResult format
+    results = []
+    for event in events:
+        location = event.venue_name or "TBD"
+        if event.venue_address:
+            location = f"{location}, {event.venue_address}"
+
+        results.append(
+            EventResult(
+                id=event.id,
+                title=event.title,
+                date=event.start_time.isoformat(),
+                location=location,
+                category=event.category,
+                description=event.description[:200] if event.description else "",
+                is_free=event.is_free,
+                price_amount=event.price_amount,
+                distance_miles=5.0,  # Meetup doesn't provide distance in search
+                url=event.url,
+            )
+        )
+
+    return results
+
+
 def _register_sources() -> None:
     """Register all event sources with the registry."""
     # Only register if not already registered
@@ -223,6 +287,16 @@ def _register_sources() -> None:
                 fetch_fn=_fetch_eventbrite_events,
                 is_available_fn=_is_eventbrite_available,
                 description="Eventbrite API events",
+            )
+        )
+
+    if event_registry.get("meetup") is None:
+        event_registry.register(
+            EventSource(
+                name="meetup",
+                fetch_fn=_fetch_meetup_events,
+                is_available_fn=_is_meetup_available,
+                description="Meetup GraphQL API events",
             )
         )
 
