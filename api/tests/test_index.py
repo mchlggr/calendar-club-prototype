@@ -42,15 +42,17 @@ class TestRootEndpoint:
 class TestChatStreamEndpoint:
     """Test chat streaming endpoint."""
 
-    def test_missing_openai_key_returns_500(self, client, monkeypatch):
-        """Without OPENAI_API_KEY, should return 500 error."""
+    def test_missing_openai_key_returns_error_event(self, client, monkeypatch):
+        """Without OPENAI_API_KEY, should return 200 with SSE error event."""
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         _clear_settings_cache()
         response = client.post(
             "/api/chat/stream",
             json={"message": "hello"},
         )
-        assert response.status_code == 500
+        # Streaming endpoints return 200 with error events (better UX)
+        assert response.status_code == 200
+        assert "error" in response.text
 
     def test_valid_request_with_api_key(self, client):
         """Request with valid API key should be accepted."""
