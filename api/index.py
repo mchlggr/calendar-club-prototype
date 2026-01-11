@@ -149,8 +149,8 @@ async def stream_chat_response(
                 logger.info("Handoff to search phase with profile: %s", output.search_profile)
                 yield sse_event("searching", {})
 
-                # Perform the search
-                search_result = search_events(output.search_profile)
+                # Perform the search (async to avoid event loop issues)
+                search_result = await search_events(output.search_profile)
 
                 # Emit search results
                 if search_result.events:
@@ -168,11 +168,9 @@ async def stream_chat_response(
                     ]
                     yield sse_event("events", {"events": events_data})
 
-                    # Emit a message about results from SearchAgent perspective
+                    # Emit a message about results
                     result_message = f"\n\nI found {len(search_result.events)} events for you!"
-                    if search_result.source == "demo":
-                        result_message += " (These are sample events for demonstration.)"
-                    elif search_result.source == "unavailable":
+                    if search_result.source == "unavailable":
                         result_message = "\n\nEvent search is temporarily unavailable. Please try again later."
 
                     for i in range(0, len(result_message), 10):

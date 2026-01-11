@@ -5,7 +5,6 @@ Shows search results based on SearchProfile and refines
 based on user feedback (Yes/No/Maybe ratings).
 """
 
-import asyncio
 import logging
 from datetime import datetime
 
@@ -122,7 +121,7 @@ async def _fetch_eventbrite_events(profile: SearchProfile) -> list[EventResult]:
     return results
 
 
-def search_events(profile: SearchProfile) -> SearchResult:
+async def search_events(profile: SearchProfile) -> SearchResult:
     """
     Search for events matching the profile.
 
@@ -144,19 +143,7 @@ def search_events(profile: SearchProfile) -> SearchResult:
         )
 
     try:
-        # Run async fetch in sync context (tool functions are sync)
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # If we're already in an async context, create a new task
-            import concurrent.futures
-
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(
-                    asyncio.run, _fetch_eventbrite_events(profile)
-                )
-                events = future.result(timeout=30)
-        else:
-            events = loop.run_until_complete(_fetch_eventbrite_events(profile))
+        events = await _fetch_eventbrite_events(profile)
 
         if events:
             logger.info("Eventbrite returned %s events", len(events))
