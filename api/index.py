@@ -136,8 +136,14 @@ async def stream_chat_response(
 
 @app.get("/")
 def root():
-    """Health check endpoint."""
+    """Root endpoint."""
     return {"status": "ok"}
+
+
+@app.get("/health")
+def health():
+    """Health check endpoint."""
+    return {"status": "healthy"}
 
 
 @app.post("/api/chat")
