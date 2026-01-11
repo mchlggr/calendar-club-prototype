@@ -405,7 +405,7 @@ def refine_results(input_data: RefinementInput) -> RefinementOutput:
     )
 
 
-SEARCH_AGENT_INSTRUCTIONS = """You show search results and help users refine them based on their feedback.
+SEARCH_AGENT_INSTRUCTIONS_TEMPLATE = """You show search results and help users refine them based on their feedback.
 
 ## Your Role
 You're a helpful events concierge. Present results clearly and learn from user preferences to improve recommendations.
@@ -473,12 +473,29 @@ You: "Got it! I'll note your interest in the first event and look for closer alt
 "Based on your feedback, I found some closer options..."
 """
 
+
+def get_search_instructions(context: object, agent: object) -> str:
+    """Generate search agent instructions with current date.
+
+    Args:
+        context: RunContextWrapper from agents library (unused)
+        agent: Agent instance (unused)
+    """
+    today = datetime.now().strftime("%A, %B %d, %Y")
+    return f"""Today's date is {today}.
+
+{SEARCH_AGENT_INSTRUCTIONS_TEMPLATE}"""
+
+
+# Alias for backward compatibility
+SEARCH_AGENT_INSTRUCTIONS = SEARCH_AGENT_INSTRUCTIONS_TEMPLATE
+
 search_events_tool = function_tool(search_events)
 refine_results_tool = function_tool(refine_results)
 
 search_agent = Agent(
     name="SearchAgent",
-    instructions=SEARCH_AGENT_INSTRUCTIONS,
+    instructions=get_search_instructions,
     model="gpt-4o",
     tools=[search_events_tool, refine_results_tool],
 )

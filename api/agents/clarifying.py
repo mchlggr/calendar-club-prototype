@@ -1,10 +1,12 @@
 """Clarifying agent for event discovery conversations."""
 
+from datetime import datetime
+
 from agents import Agent
 
 from api.models.conversation import AgentTurnResponse
 
-CLARIFYING_AGENT_INSTRUCTIONS = """You are a friendly event discovery assistant for Calendar Club.
+CLARIFYING_AGENT_INSTRUCTIONS_TEMPLATE = """You are a friendly event discovery assistant for Calendar Club.
 Your job is to help users find local tech events through natural conversation.
 
 ## Default Location
@@ -122,12 +124,27 @@ When ready_to_search is True, you MUST also set search_profile with at least:
 If you set ready_to_search=True but leave search_profile=null, the search will NOT happen!
 """
 
+
+def get_clarifying_instructions(context: object, agent: object) -> str:
+    """Generate clarifying agent instructions with current date.
+
+    Args:
+        context: RunContextWrapper from agents library (unused)
+        agent: Agent instance (unused)
+    """
+    today = datetime.now().strftime("%A, %B %d, %Y")
+    return f"""Today's date is {today}.
+
+{CLARIFYING_AGENT_INSTRUCTIONS_TEMPLATE}"""
+
+
 clarifying_agent = Agent(
     name="clarifying_agent",
-    instructions=CLARIFYING_AGENT_INSTRUCTIONS,
+    instructions=get_clarifying_instructions,
     output_type=AgentTurnResponse,
     model="gpt-4o",
 )
 
-# Alias for backward compatibility
-CLARIFYING_INSTRUCTIONS = CLARIFYING_AGENT_INSTRUCTIONS
+# Aliases for backward compatibility
+CLARIFYING_INSTRUCTIONS = CLARIFYING_AGENT_INSTRUCTIONS_TEMPLATE
+CLARIFYING_AGENT_INSTRUCTIONS = CLARIFYING_AGENT_INSTRUCTIONS_TEMPLATE
