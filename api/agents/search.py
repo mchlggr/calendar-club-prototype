@@ -14,7 +14,7 @@ from agents import Agent, function_tool
 
 from api.config import get_settings
 from api.models import EventFeedback, SearchProfile
-from api.services import get_eventbrite_client
+from api.services import EventSource, event_registry, get_eventbrite_client
 from api.services.event_cache import CachedEvent, get_event_cache
 
 logger = logging.getLogger(__name__)
@@ -187,14 +187,55 @@ def _fetch_cached_events(
     return [_cached_event_to_result(e) for e in cached_events]
 
 
+async def _fetch_luma_events(profile: SearchProfile) -> list[EventResult]:
+    """Async wrapper for fetching Luma events from cache."""
+    return _fetch_cached_events(profile, sources=["luma"])
+
+
+def _is_eventbrite_available() -> bool:
+    """Check if Eventbrite API is configured."""
+    settings = get_settings()
+    return bool(settings.eventbrite_api_key)
+
+
+def _is_luma_available() -> bool:
+    """Check if Luma cache has events."""
+    return True  # Cache is always available
+
+
+def _register_sources() -> None:
+    """Register all event sources with the registry."""
+    # Only register if not already registered
+    if event_registry.get("luma") is None:
+        event_registry.register(
+            EventSource(
+                name="luma",
+                fetch_fn=_fetch_luma_events,
+                is_available_fn=_is_luma_available,
+                description="Luma events from cache",
+            )
+        )
+
+    if event_registry.get("eventbrite") is None:
+        event_registry.register(
+            EventSource(
+                name="eventbrite",
+                fetch_fn=_fetch_eventbrite_events,
+                is_available_fn=_is_eventbrite_available,
+                description="Eventbrite API events",
+            )
+        )
+
+
+# Register sources at module import time
+_register_sources()
+
+
 async def search_events(profile: SearchProfile) -> SearchResult:
     """
     Search for events matching the profile from multiple sources.
 
-    Fetches from:
-    1. Event cache (Luma and other scraped events)
-    2. Eventbrite API (if configured)
-
+    Fetches from all available sources registered in the event registry.
     Results are merged and deduplicated.
 
     Args:
@@ -203,30 +244,20 @@ async def search_events(profile: SearchProfile) -> SearchResult:
     Returns:
         SearchResult with events list and source attribution
     """
-    settings = get_settings()
     all_events: list[EventResult] = []
     sources_used: list[str] = []
 
-    # 1. Fetch from event cache (Luma, etc.)
-    try:
-        cached_events = _fetch_cached_events(profile, sources=["luma"])
-        if cached_events:
-            logger.info("Cache returned %s Luma events", len(cached_events))
-            all_events.extend(cached_events)
-            sources_used.append("luma")
-    except Exception as e:
-        logger.warning("Error fetching cached events: %s", e)
-
-    # 2. Fetch from Eventbrite API
-    if settings.eventbrite_api_key:
+    # Fetch from all available sources via registry
+    available_sources = event_registry.get_available()
+    for source in available_sources:
         try:
-            eventbrite_events = await _fetch_eventbrite_events(profile)
-            if eventbrite_events:
-                logger.info("Eventbrite returned %s events", len(eventbrite_events))
-                all_events.extend(eventbrite_events)
-                sources_used.append("eventbrite")
+            events = await source.fetch_fn(profile)
+            if events:
+                logger.info("%s returned %s events", source.name, len(events))
+                all_events.extend(events)
+                sources_used.append(source.name)
         except Exception as e:
-            logger.error("Eventbrite API error: %s", e, exc_info=True)
+            logger.error("Error fetching from %s: %s", source.name, e, exc_info=True)
 
     # Determine source attribution
     if not sources_used:
