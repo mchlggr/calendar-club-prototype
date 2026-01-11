@@ -1,4 +1,58 @@
-"""Services for Calendar Club backend."""
+"""
+Services for Calendar Club backend.
+
+This module provides service clients and utilities for event discovery,
+calendar management, and real-time communication.
+
+Event Source Registry
+---------------------
+The event source registry allows pluggable event sources to be registered
+and queried dynamically. Sources are searched in parallel during event
+discovery.
+
+Registering a source at startup::
+
+    from api.services import register_eventbrite_source, register_exa_source
+
+    # Register built-in sources
+    register_eventbrite_source()
+    register_exa_source()
+
+Creating a custom event source::
+
+    from api.services import EventSource, register_event_source
+
+    async def my_search(profile):
+        # Implement search logic
+        return [...]
+
+    source = EventSource(
+        name="my_source",
+        search_fn=my_search,
+        is_enabled_fn=lambda: bool(os.getenv("MY_API_KEY")),
+        priority=50,  # Lower = higher priority
+        description="My custom event source",
+    )
+    register_event_source(source)
+
+Querying enabled sources::
+
+    from api.services import get_event_source_registry
+
+    registry = get_event_source_registry()
+    for source in registry.get_enabled():
+        results = await source.search_fn(profile)
+
+Available Services
+------------------
+- EventSource, EventSourceRegistry: Pluggable event source pattern
+- EventbriteClient: Eventbrite API integration
+- ExaClient: Exa neural web search
+- CalendarEvent: ICS calendar generation
+- SessionManager: Conversation session management
+- SSEConnectionManager: Server-sent events
+- TemporalParser: Natural language date/time parsing
+"""
 
 from .background_tasks import BackgroundTaskManager, get_background_task_manager
 from .base import (
