@@ -1,5 +1,6 @@
 # Project Specific
 uv.lock
+data/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
