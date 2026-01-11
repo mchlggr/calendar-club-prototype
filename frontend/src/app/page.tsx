@@ -10,8 +10,8 @@ export default function Home() {
 	const router = useRouter();
 	const [discoveredEvents, setDiscoveredEvents] = useState<CalendarEvent[]>([]);
 
-	const handleSearch = (query: unknown) => {
-		console.log("Search:", query);
+	const handleSearch = (_query: unknown) => {
+		// Search handled by DiscoveryChat streaming
 	};
 
 	const handleResultsReady = (events: CalendarEvent[]) => {

@@ -52,14 +52,12 @@ export default function WeekPage() {
 		setWeekStart(next);
 	};
 
-	const handleEventClick = (event: CalendarEvent) => {
-		console.log("Event clicked:", event.id);
+	const handleEventClick = (_event: CalendarEvent) => {
+		// Event click handling - could open modal or navigate
 	};
 
-	const handleEventHover = (event: CalendarEvent | null) => {
-		if (event) {
-			console.log("Event hover:", event.id);
-		}
+	const handleEventHover = (_event: CalendarEvent | null) => {
+		// Event hover handling - could show preview
 	};
 
 	return (
