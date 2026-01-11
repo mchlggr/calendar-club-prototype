@@ -45,7 +45,7 @@ const tiltWarp = Tilt_Warp({
 export const metadata: Metadata = {
 	title: "Calendar Club | Discover Local Tech Events",
 	description:
-		"A curated directory of the best technical meetups. No noise, just deep cuts.",
+		"Discover in-peron event and download a calendar file for your week.",
 };
 
 export default function RootLayout({
