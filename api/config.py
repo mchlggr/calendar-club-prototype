@@ -28,6 +28,11 @@ class Settings(BaseSettings):
         description="Google OAuth redirect URI",
     )
 
+    # Meetup OAuth
+    meetup_client_id: str = Field(default="", description="Meetup OAuth client ID")
+    meetup_client_secret: str = Field(default="", description="Meetup OAuth client secret")
+    meetup_access_token: str = Field(default="", description="Meetup OAuth access token")
+
     # Server config
     cors_origins: str = Field(
         default="http://localhost:3000,http://localhost:3001",
