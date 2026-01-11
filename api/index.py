@@ -20,6 +20,11 @@ from agents import Runner, SQLiteSession
 from api.agents import clarifying_agent
 from api.agents.search import search_events
 from api.config import configure_logging, get_settings
+from api.services import (
+    register_eventbrite_source,
+    register_exa_source,
+)
+from api.services.firecrawl import register_posh_source
 from api.services.background_tasks import get_background_task_manager
 from api.services.calendar import CalendarEvent, create_ics_event, create_ics_multiple
 from api.services.google_calendar import (
@@ -34,6 +39,11 @@ load_dotenv()
 # Configure logging from settings (uses LOG_LEVEL env var)
 configure_logging()
 logger = logging.getLogger(__name__)
+
+# Register event sources
+register_eventbrite_source()
+register_exa_source()
+register_posh_source()
 
 
 def _safe_json_serialize(data: Any) -> str | None:

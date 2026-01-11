@@ -22,6 +22,7 @@ from api.models import EventFeedback, SearchProfile
 from api.services import (
     EventbriteEvent,
     ExaSearchResult,
+    ScrapedEvent,
     get_event_source_registry,
 )
 
@@ -123,6 +124,32 @@ def _convert_exa_result(result: ExaSearchResult) -> EventResult:
     )
 
 
+def _convert_scraped_event(event: ScrapedEvent) -> EventResult:
+    """Convert ScrapedEvent (Posh/Firecrawl) to EventResult format."""
+    # Build location string
+    location = event.venue_name or "TBD"
+    if event.venue_address:
+        location = f"{location}, {event.venue_address}"
+
+    # Format date
+    date_str = datetime.now().isoformat()
+    if event.start_time:
+        date_str = event.start_time.isoformat()
+
+    return EventResult(
+        id=f"posh-{event.event_id}",
+        title=event.title,
+        date=date_str,
+        location=location,
+        category=event.category,  # Usually "nightlife" for Posh
+        description=event.description[:200] if event.description else "",
+        is_free=event.is_free,
+        price_amount=event.price_amount,
+        distance_miles=5.0,  # Unknown from Posh
+        url=event.url,
+    )
+
+
 def _normalize_url(url: str | None) -> str | None:
     """Normalize URL for deduplication."""
     if not url:
@@ -182,6 +209,8 @@ def _convert_source_results(
                 events.append(_convert_eventbrite_event(result))
             elif source_name == "exa" and isinstance(result, ExaSearchResult):
                 events.append(_convert_exa_result(result))
+            elif source_name == "posh" and isinstance(result, ScrapedEvent):
+                events.append(_convert_scraped_event(result))
             else:
                 # Unknown source type - skip
                 logger.debug("Skipping unknown result type from %s", source_name)

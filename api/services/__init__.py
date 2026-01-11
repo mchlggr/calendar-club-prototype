@@ -36,6 +36,7 @@ from .firecrawl import (
     ScrapedEvent,
     get_firecrawl_client,
     get_posh_extractor,
+    register_posh_source,
 )
 from .google_calendar import (
     GoogleCalendarEvent,
@@ -85,6 +86,7 @@ __all__ = [
     "ScrapedEvent",
     "get_firecrawl_client",
     "get_posh_extractor",
+    "register_posh_source",
     "GoogleCalendarEvent",
     "GoogleCalendarService",
     "get_google_calendar_service",

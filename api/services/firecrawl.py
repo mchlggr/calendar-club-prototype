@@ -367,6 +367,62 @@ def get_posh_extractor() -> PoshExtractor:
     return _posh_extractor
 
 
+async def search_events_adapter(profile: Any) -> list[ScrapedEvent]:
+    """
+    Adapter for registry pattern - searches Posh using a SearchProfile.
+
+    Args:
+        profile: SearchProfile with search criteria
+
+    Returns:
+        List of ScrapedEvent objects matching the profile
+    """
+    extractor = get_posh_extractor()
+
+    # Hardcoded location for now - future refactor will add location to SearchProfile
+    city = "columbus"
+
+    # Fetch all events for the city
+    events = await extractor.discover_events(city=city, limit=30)
+
+    # Post-fetch filtering based on SearchProfile
+    filtered_events = []
+    for event in events:
+        # Filter by time_window if specified
+        if hasattr(profile, "time_window") and profile.time_window:
+            if profile.time_window.start and event.start_time:
+                if event.start_time < profile.time_window.start:
+                    continue
+            if profile.time_window.end and event.start_time:
+                if event.start_time > profile.time_window.end:
+                    continue
+
+        # Filter by free_only if specified
+        if hasattr(profile, "free_only") and profile.free_only:
+            if not event.is_free:
+                continue
+
+        filtered_events.append(event)
+
+    return filtered_events
+
+
+def register_posh_source() -> None:
+    """Register Posh as an event source in the global registry."""
+    from api.services.base import EventSource, register_event_source
+
+    api_key = os.getenv("FIRECRAWL_API_KEY", "")
+
+    source = EventSource(
+        name="posh",
+        search_fn=search_events_adapter,
+        is_enabled_fn=lambda: bool(api_key),
+        priority=25,  # Lower priority - scraping is slower than APIs
+        description="Posh.vip nightlife and social events via Firecrawl scraping",
+    )
+    register_event_source(source)
+
+
 # Aliases for backward compatibility
 LumaEvent = ScrapedEvent
 LumaExtractor = PoshExtractor
