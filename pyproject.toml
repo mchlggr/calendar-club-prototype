@@ -9,6 +9,7 @@ dependencies = [
     "openai",
     "openai-agents>=0.6.5",
     "pydantic>=2.11.4",
+    "pydantic-core>=2.27.0",
     "pydantic-settings>=2.2.1",
     "uvicorn>=0.34.2",
     "python-multipart>=0.0.18",
