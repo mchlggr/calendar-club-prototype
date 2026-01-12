@@ -12,7 +12,6 @@ from api.agents.search import (
     EventResult,
     RefinementInput,
     SearchResult,
-    _fetch_cached_events,
     refine_results,
     search_events,
 )

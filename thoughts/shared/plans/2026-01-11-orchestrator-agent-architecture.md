@@ -804,9 +804,9 @@ __all__ = [
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Type checking passes: `cd api && python -m mypy agents/orchestrator.py`
-- [ ] Module imports without error: `python -c "from api.agents.orchestrator import orchestrator_agent"`
-- [ ] All tools are registered: `python -c "from api.agents.orchestrator import orchestrator_agent; print([t.name for t in orchestrator_agent.tools])"`
+- [x] Type checking passes: `cd api && python -m mypy agents/orchestrator.py`
+- [x] Module imports without error: `python -c "from api.agents.orchestrator import orchestrator_agent"`
+- [x] All tools are registered: `python -c "from api.agents.orchestrator import orchestrator_agent; print([t.name for t in orchestrator_agent.tools])"`
 
 #### Manual Verification:
 - [ ] Review orchestrator instructions for completeness
@@ -940,9 +940,9 @@ orchestrator_agent = Agent(
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Server starts without errors: `cd api && uvicorn index:app --reload`
-- [ ] Type checking passes: `cd api && python -m mypy index.py`
-- [ ] Basic chat request works: `curl -X POST http://localhost:8000/api/chat/stream -H "Content-Type: application/json" -d '{"message": "hi"}'`
+- [x] Server starts without errors: `cd api && uvicorn index:app --reload`
+- [x] Type checking passes: `cd api && python -m mypy index.py`
+- [x] Basic chat request works: `curl -X POST http://localhost:8000/api/chat/stream -H "Content-Type: application/json" -d '{"message": "hi"}'`
 
 #### Manual Verification:
 - [ ] Send "What's happening this weekend?" - should trigger search and return events
@@ -1137,8 +1137,8 @@ class SimilarInput(BaseModel):
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Type checking passes: `cd api && python -m mypy agents/orchestrator.py`
-- [ ] Unit tests pass (if any): `cd api && pytest agents/tests/`
+- [x] Type checking passes: `cd api && python -m mypy agents/orchestrator.py`
+- [x] Unit tests pass (if any): `cd api && pytest agents/tests/`
 
 #### Manual Verification:
 - [ ] Search for events, then say "only free ones" - filters without re-searching
@@ -1236,8 +1236,8 @@ Add a new section:
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] All tests pass: `cd api && pytest agents/tests/`
-- [ ] No linting errors: `cd api && ruff check .`
+- [x] All tests pass: `cd api && pytest agents/tests/`
+- [x] No linting errors: `cd api && ruff check .`
 
 #### Manual Verification:
 - [ ] Tests cover key orchestrator behaviors

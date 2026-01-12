@@ -94,15 +94,23 @@ def _convert_eventbrite_event(event: EventbriteEvent) -> EventResult:
     )
 
 
-def _convert_exa_result(result: ExaSearchResult) -> EventResult:
-    """Convert ExaSearchResult to EventResult format."""
+def _convert_exa_result(result: ExaSearchResult) -> EventResult | None:
+    """Convert ExaSearchResult to EventResult. Returns None if date is missing."""
+    if not result.url:
+        return None
+
+    # Skip results without dates
+    if not result.published_date:
+        logger.debug(
+            "⏭️ [Search] Skipping Exa result without date | title=%s url=%s",
+            result.title[:50] if result.title else "untitled",
+            result.url[:80],
+        )
+        return None
+
     # Generate stable ID from URL
     event_id = hashlib.md5(result.url.encode()).hexdigest()[:12]
-
-    # Extract date from result if available
-    date_str = datetime.now().isoformat()
-    if result.published_date:
-        date_str = result.published_date.isoformat()
+    date_str = result.published_date.isoformat()
 
     # Use highlights for description, fall back to text snippet
     description = ""
@@ -113,7 +121,7 @@ def _convert_exa_result(result: ExaSearchResult) -> EventResult:
 
     return EventResult(
         id=f"exa-{event_id}",
-        title=result.title,
+        title=result.title or "Untitled Event",
         date=date_str,
         location="Columbus, OH",  # Exa doesn't provide structured location
         category="community",  # Default category
@@ -125,24 +133,29 @@ def _convert_exa_result(result: ExaSearchResult) -> EventResult:
     )
 
 
-def _convert_scraped_event(event: ScrapedEvent) -> EventResult:
-    """Convert ScrapedEvent (Posh/Firecrawl) to EventResult format."""
+def _convert_scraped_event(event: ScrapedEvent) -> EventResult | None:
+    """Convert scraped event to EventResult. Returns None if date is missing."""
+    # Skip events without dates
+    if not event.start_time:
+        logger.debug(
+            "⏭️ [Search] Skipping event without date | source=%s title=%s url=%s",
+            event.source,
+            event.title[:50] if event.title else "untitled",
+            event.url or "no-url",
+        )
+        return None
+
     # Build location string
     location = event.venue_name or "TBD"
     if event.venue_address:
         location = f"{location}, {event.venue_address}"
 
-    # Format date
-    date_str = datetime.now().isoformat()
-    if event.start_time:
-        date_str = event.start_time.isoformat()
-
     return EventResult(
         id=f"posh-{event.event_id}",
         title=event.title,
-        date=date_str,
+        date=event.start_time.isoformat(),
         location=location,
-        category=event.category,  # Usually "nightlife" for Posh
+        category=event.category,
         description=event.description[:200] if event.description else "",
         is_free=event.is_free,
         price_amount=event.price_amount,

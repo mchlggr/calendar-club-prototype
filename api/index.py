@@ -7,7 +7,6 @@ import os
 import time
 import uuid
 from collections.abc import AsyncGenerator
-from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -18,9 +17,8 @@ from pydantic import BaseModel
 
 from agents import Runner, SQLiteSession
 
-from api.agents import clarifying_agent
-from api.agents.search import search_events
-from api.config import configure_logging, get_settings
+from api.agents import orchestrator_agent
+from api.config import configure_logging
 from api.services import (
     register_eventbrite_source,
     register_exa_source,
@@ -34,8 +32,6 @@ from api.services.firecrawl import (
     register_posh_source,
     register_river_source,
 )
-from api.services.meetup import register_meetup_source
-from api.services.background_tasks import get_background_task_manager
 from api.services.calendar import CalendarEvent, create_ics_event, create_ics_multiple
 from api.services.google_calendar import (
     GoogleCalendarEvent,
@@ -61,14 +57,6 @@ register_meetup_scraper_source()
 register_facebook_source()
 register_river_source()
 register_exa_research_source()
-
-
-def _safe_json_serialize(data: Any) -> str | None:
-    """Safely serialize data to JSON, returning None if not serializable."""
-    try:
-        return json.dumps(data)
-    except (TypeError, ValueError):
-        return None
 
 
 def _format_user_error(error: Exception) -> str:
@@ -145,207 +133,103 @@ def sse_event(event_type: str, data: dict) -> str:
 
 
 async def stream_chat_response(
-    message: str, session: SQLiteSession | None = None, session_id: str | None = None
+    message: str,
+    session: SQLiteSession | None = None,
+    session_id: str | None = None,
 ) -> AsyncGenerator[str, None]:
-    """Stream chat response with automatic handoff from clarifying to search phase.
+    """Stream chat response using orchestrator agent.
 
-    The flow:
-    1. ClarifyingAgent gathers user preferences
-    2. When ready_to_search=True, handoff to search phase
-    3. SearchAgent presents results and handles refinement
-    4. Background Websets discovery pushes more_events later
+    The orchestrator handles:
+    1. Clarification (gathering user preferences)
+    2. Search (finding events via tools)
+    3. Refinement (filtering existing results)
+    4. Similar events (finding related events)
     """
-    # Generate trace ID for this request
-    trace_id = str(uuid.uuid4())[:8]  # Short trace ID for readability
+    trace_id = str(uuid.uuid4())[:8]
+    logger.info("🚀 [Chat] Start | trace=%s session=%s", trace_id, session_id)
 
     sse_manager = get_sse_manager()
-    bg_manager = get_background_task_manager()
-    settings = get_settings()
-    connection = None
-
-    logger.debug(
-        "🔍 [Chat] Request started | trace=%s session=%s",
-        trace_id,
-        session_id or "None",
-    )
-
-    # Register SSE connection for background event delivery
-    if session_id:
-        connection = await sse_manager.register(session_id)
-        logger.debug(
-            "💬 [Chat] Message received | trace=%s session=%s length=%d msg=%s",
-            trace_id,
-            session_id,
-            len(message),
-            message[:50],
-        )
-    else:
-        logger.debug(
-            "💬 [Chat] Message received | trace=%s session=None length=%d msg=%s",
-            trace_id,
-            len(message),
-            message[:50],
-        )
 
     try:
-        # Phase 1: Run ClarifyingAgent to gather/refine preferences
-        logger.debug(
-            "🤔 [Clarify] Agent starting | trace=%s session=%s",
-            trace_id,
-            session_id or "None",
-        )
-        clarify_start = time.perf_counter()
+        # Register SSE connection for background events
+        if session_id:
+            await sse_manager.register(session_id)
+            logger.debug("📡 [SSE] Registered | session=%s", session_id)
+
+        # Run orchestrator agent
+        start_time = time.perf_counter()
         result = await Runner.run(
-            clarifying_agent,
+            orchestrator_agent,
             message,
             session=session,
         )
-        clarify_elapsed = time.perf_counter() - clarify_start
-        logger.debug(
-            "✅ [Clarify] Agent complete | trace=%s duration=%.2fs ready_to_search=%s",
+        duration = time.perf_counter() - start_time
+        logger.info(
+            "✅ [Orchestrator] Complete | trace=%s duration=%.2fs",
             trace_id,
-            clarify_elapsed,
-            result.final_output.ready_to_search if result.final_output else False,
+            duration,
         )
 
-        # Stream the clarifying agent's message content
         if result.final_output:
             output = result.final_output
-            message_text = output.message
 
-            # Stream message in chunks for responsiveness
-            for i in range(0, len(message_text), 10):
-                chunk = message_text[i : i + 10]
-                yield sse_event("content", {"content": chunk})
+            # Stream message content
+            if output.message:
+                for i in range(0, len(output.message), 10):
+                    chunk = output.message[i : i + 10]
+                    yield sse_event("content", {"content": chunk})
+                    await asyncio.sleep(0.01)
 
-            # Send quick picks if any
+            # Send quick picks if present
             if output.quick_picks:
                 quick_picks_data = [
                     {"label": qp.label, "value": qp.value} for qp in output.quick_picks
                 ]
                 yield sse_event("quick_picks", {"quick_picks": quick_picks_data})
 
-            # Send placeholder if provided
+            # Send placeholder if present
             if output.placeholder:
                 yield sse_event("placeholder", {"placeholder": output.placeholder})
 
-            # Phase 2: Handoff to search when ready
-            if output.ready_to_search and output.search_profile:
-                profile = output.search_profile
+            # Send events if present (from search or refinement)
+            if output.events:
+                events_data = [
+                    {
+                        "id": evt.id if hasattr(evt, "id") else evt.get("id"),
+                        "title": evt.title if hasattr(evt, "title") else evt.get("title"),
+                        "startTime": evt.date if hasattr(evt, "date") else evt.get("date"),
+                        "location": evt.location if hasattr(evt, "location") else evt.get("location"),
+                        "categories": [evt.category if hasattr(evt, "category") else evt.get("category", "other")],
+                        "url": evt.url if hasattr(evt, "url") else evt.get("url"),
+                        "source": "orchestrator",
+                    }
+                    for evt in output.events
+                ]
+                yield sse_event("events", {"events": events_data, "trace_id": trace_id})
                 logger.debug(
-                    "🔍 [Search] Handoff | trace=%s categories=%s time_window=%s keywords=%s",
+                    "📤 [SSE] Streaming events | trace=%s count=%d",
                     trace_id,
-                    profile.categories,
-                    profile.time_window,
-                    profile.keywords[:3] if profile.keywords else None,
+                    len(events_data),
                 )
-                yield sse_event("searching", {})
 
-                # Perform the search
-                search_result = await search_events(output.search_profile)
-
-                # Emit search results
-                if search_result.events:
-                    events_data = [
-                        {
-                            "id": evt.id,
-                            "title": evt.title,
-                            "startTime": evt.date,
-                            "location": evt.location,
-                            "categories": [evt.category],
-                            "url": evt.url,
-                            "source": search_result.source,
-                        }
-                        for evt in search_result.events
-                    ]
-                    # Log individual events before streaming
-                    if logger.isEnabledFor(logging.DEBUG):
-                        for ev in events_data:
-                            ev_id = str(ev.get("id", "none"))[:20]
-                            ev_title = str(ev.get("title", "untitled"))[:50]
-                            logger.debug(
-                                "📋 [SSE] Streaming event | trace=%s session=%s id=%s title=%s",
-                                trace_id,
-                                session_id or "None",
-                                ev_id,
-                                ev_title,
-                            )
-                    yield sse_event("events", {"events": events_data, "trace_id": trace_id})
-                    logger.debug(
-                        "📤 [SSE] Streaming events | trace=%s session=%s count=%d",
-                        trace_id,
-                        session_id or "None",
-                        len(events_data),
-                    )
-
-                    # Emit a message about results from SearchAgent perspective
-                    result_message = f"\n\nI found {len(search_result.events)} events for you!"
-                    if search_result.source == "unavailable":
-                        result_message = "\n\nEvent search is temporarily unavailable. Please try again later."
-
-                    for i in range(0, len(result_message), 10):
-                        chunk = result_message[i : i + 10]
-                        yield sse_event("content", {"content": chunk})
-
-                    # Start background Websets discovery if Exa is configured
-                    if session_id and settings.exa_api_key:
-                        webset_id = await bg_manager.start_webset_discovery(
-                            session_id=session_id,
-                            profile=output.search_profile,
-                        )
-                        if webset_id:
-                            yield sse_event(
-                                "background_search",
-                                {"message": "Searching for more events in the background..."},
-                            )
-                else:
-                    # No results found
-                    logger.debug(
-                        "📭 [Search] No results | trace=%s session=%s",
-                        trace_id,
-                        session_id or "None",
-                    )
-                    no_results_msg = "\n\nI couldn't find any events matching your criteria. "
-                    if search_result.message:
-                        no_results_msg += search_result.message
-                    else:
-                        no_results_msg += "Try broadening your search or changing the dates."
-
-                    for i in range(0, len(no_results_msg), 10):
-                        chunk = no_results_msg[i : i + 10]
-                        yield sse_event("content", {"content": chunk})
-
-        logger.debug("✅ [SSE] Stream complete | trace=%s session=%s", trace_id, session_id or "None")
+        # Signal completion
         yield sse_event("done", {})
-
-        # Keep connection alive briefly to receive background events
-        if connection and session_id:
-            try:
-                # Wait for background events for a short time
-                while True:
-                    try:
-                        event = await asyncio.wait_for(
-                            connection.queue.get(),
-                            timeout=0.5,
-                        )
-                        yield sse_event(event["type"], event)
-                    except asyncio.TimeoutError:
-                        # No more events, check if we should keep waiting
-                        if not connection.active:
-                            break
-                        # Small poll window, then exit
-                        break
-            except Exception as e:
-                logger.debug("Background event loop ended: %s", e)
 
     except Exception as e:
-        logger.error("Error in stream_chat_response: %s", e, exc_info=True)
-        yield sse_event("error", {"message": _format_user_error(e)})
+        logger.error(
+            "❌ [Chat] Error | trace=%s error=%s",
+            trace_id,
+            str(e),
+            exc_info=True,
+        )
+        error_msg = _format_user_error(e)
+        yield sse_event("error", {"message": error_msg})
         yield sse_event("done", {})
+
     finally:
-        # Unregister connection
         if session_id:
             await sse_manager.unregister(session_id)
+            logger.debug("📡 [SSE] Unregistered | session=%s", session_id)
 
 
 @app.get("/")
