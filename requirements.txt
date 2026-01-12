@@ -14,3 +14,4 @@ exa-py>=2.0.2
 google-auth-oauthlib>=1.2.0
 gql[aiohttp]>=3.5.0
 msal>=1.31.0
+libsql-client>=0.3.0

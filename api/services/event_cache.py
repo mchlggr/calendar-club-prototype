@@ -3,6 +3,9 @@ SQLite-based event cache for deduplication across search providers.
 
 Provides caching with composite-key deduplication (source + event_id) and
 24-hour TTL. Shared by Exa, Firecrawl, and other event search sources.
+
+Supports configuration via DATABASE_URL environment variable.
+Falls back to local SQLite file (event_cache.db) if not configured.
 """
 
 import json
@@ -15,10 +18,25 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from api.config import get_settings
+
 logger = logging.getLogger(__name__)
 
 # Default database path (relative to api root)
 DEFAULT_CACHE_DB_PATH = Path(__file__).parent.parent / "event_cache.db"
+
+
+def _get_cache_database_path() -> str:
+    """
+    Get the cache database path from config or fall back to local file.
+
+    Returns DATABASE_URL if configured, otherwise the default local path.
+    Note: For Turso URLs (libsql://...), libsql-client is required.
+    """
+    settings = get_settings()
+    if settings.database_url:
+        return settings.database_url
+    return str(DEFAULT_CACHE_DB_PATH)
 
 # Default TTL: 24 hours
 DEFAULT_TTL_HOURS = 24
@@ -66,10 +84,11 @@ class EventCache:
         Initialize the event cache.
 
         Args:
-            db_path: Path to SQLite database file. Defaults to api/event_cache.db
+            db_path: Path to SQLite database file or Turso URL.
+                     Defaults to DATABASE_URL env var, or api/event_cache.db if not set.
             ttl_hours: Time-to-live for cached entries in hours. Defaults to 24.
         """
-        self.db_path = str(db_path or DEFAULT_CACHE_DB_PATH)
+        self.db_path = str(db_path) if db_path else _get_cache_database_path()
         self.ttl_hours = ttl_hours
         self._lock = threading.Lock()
         self._init_db()

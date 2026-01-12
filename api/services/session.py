@@ -1,22 +1,47 @@
 """
-SQLite-based session management for multi-turn conversation persistence.
+Session management for multi-turn conversation persistence.
 
-Uses OpenAI Agents SDK's SQLiteSession for storing conversation state,
-search profiles, and user preferences across chat turns.
+Uses OpenAI Agents SDK's SQLiteSession for local storage, or TursoSession
+for cloud-hosted Turso/libsql databases.
+
+Configuration:
+- Local SQLite: Leave DATABASE_URL empty (uses api/conversations.db)
+- Turso: Set DATABASE_URL=libsql://your-db.turso.io and TURSO_AUTH_TOKEN
 """
+
+from __future__ import annotations
 
 from pathlib import Path
 from typing import Union
 
 from agents import SQLiteSession
 
+from api.config import get_settings
+from api.services.turso_session import TursoSession
+
 # Default database path (relative to api root)
 DEFAULT_DB_PATH = Path(__file__).parent.parent / "conversations.db"
 
 
+def _get_database_path() -> str:
+    """
+    Get the database path from config or fall back to local file.
+
+    Returns DATABASE_URL if configured, otherwise the default local path.
+    For Turso URLs (libsql://...), the agents SDK must support libsql.
+    """
+    settings = get_settings()
+    if settings.database_url:
+        return settings.database_url
+    return str(DEFAULT_DB_PATH)
+
+
 class SessionManager:
     """
-    Manages SQLite sessions for conversation persistence.
+    Manages sessions for conversation persistence.
+
+    Automatically selects SQLiteSession for local databases or TursoSession
+    for Turso/libsql cloud databases based on DATABASE_URL configuration.
 
     Usage:
         manager = SessionManager()
@@ -30,23 +55,31 @@ class SessionManager:
         Initialize the session manager.
 
         Args:
-            db_path: Path to SQLite database file. Defaults to api/conversations.db
+            db_path: Path to SQLite database file or Turso URL.
+                     Defaults to DATABASE_URL env var, or api/conversations.db if not set.
         """
-        self.db_path = str(db_path or DEFAULT_DB_PATH)
+        self.db_path = str(db_path) if db_path else _get_database_path()
+        self._is_turso = self.db_path.startswith("libsql://")
 
-    def get_session(self, session_id: str) -> SQLiteSession:
+    def get_session(self, session_id: str) -> SQLiteSession | TursoSession:
         """
         Get or create a session for the given ID.
 
-        The session persists conversation history and can be used with
-        the OpenAI Agents SDK Runner.
+        Returns TursoSession for Turso URLs (libsql://...), otherwise SQLiteSession.
 
         Args:
             session_id: Unique identifier for the session (e.g., user ID, device ID)
 
         Returns:
-            SQLiteSession instance for use with agents
+            Session instance for use with agents (SQLiteSession or TursoSession)
         """
+        if self._is_turso:
+            settings = get_settings()
+            return TursoSession(
+                session_id=session_id,
+                url=self.db_path,
+                auth_token=settings.turso_auth_token,
+            )
         return SQLiteSession(session_id, self.db_path)
 
     async def clear_session(self, session_id: str) -> None:
