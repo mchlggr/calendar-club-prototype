@@ -21,8 +21,7 @@ dependencies = [
     "google-auth-oauthlib>=1.2.0",
     "gql[aiohttp]>=3.5.0",
     "firecrawl-py>=4.12.0",
-    "exa-py>=2.0.2",
-    "libsql-client>=0.3.0"
+    "exa-py>=2.0.2"
 ]
 
 [tool.setuptools.packages.find]
