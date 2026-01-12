@@ -15,6 +15,12 @@ class Settings(BaseSettings):
     # Required
     openai_api_key: str = Field(default="", description="OpenAI API key")
 
+    # Database (optional - empty means in-memory/non-persisted mode)
+    database_url: str = Field(
+        default="",
+        description="Database connection URL. Empty = in-memory mode (no persistence)",
+    )
+
     # Event sources
     eventbrite_api_key: str = Field(default="", description="Eventbrite API key")
     exa_api_key: str = Field(default="", description="Exa API key for web search")
@@ -56,6 +62,11 @@ class Settings(BaseSettings):
     def has_event_source(self) -> bool:
         """Check if any event source is configured."""
         return bool(self.eventbrite_api_key) or bool(self.exa_api_key)
+
+    @property
+    def has_database(self) -> bool:
+        """Check if database persistence is configured."""
+        return bool(self.database_url)
 
 
 @lru_cache

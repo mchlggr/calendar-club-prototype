@@ -1,5 +1,8 @@
 """
-SQLite-based event cache for deduplication across search providers.
+Event cache for deduplication across search providers.
+
+Supports both SQLite-based persistence (when DATABASE_URL is set) and
+in-memory caching (graceful fallback when no database is configured).
 
 Provides caching with composite-key deduplication (source + event_id) and
 24-hour TTL. Shared by Exa, Firecrawl, and other event search sources.
@@ -14,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
+
+from api.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +45,250 @@ class CachedEvent(BaseModel):
     logo_url: str | None = None
     raw_data: dict[str, Any] | None = None
     cached_at: datetime
+
+
+class InMemoryEventCache:
+    """
+    In-memory event cache for non-persisted mode.
+
+    Implements the same interface as EventCache but stores data in memory.
+    Data is lost when the process restarts.
+
+    Thread-safe for concurrent access.
+    """
+
+    def __init__(self, ttl_hours: int = DEFAULT_TTL_HOURS):
+        """
+        Initialize the in-memory cache.
+
+        Args:
+            ttl_hours: Time-to-live for cached entries in hours. Defaults to 24.
+        """
+        self.ttl_hours = ttl_hours
+        self._lock = threading.Lock()
+        # Storage: {(source, event_id): CachedEvent}
+        self._storage: dict[tuple[str, str], CachedEvent] = {}
+        logger.info("Event cache initialized in non-persisted (in-memory) mode")
+
+    def _is_expired(self, cached_at: datetime) -> bool:
+        """Check if a cached entry has expired."""
+        expiry = cached_at + timedelta(hours=self.ttl_hours)
+        return datetime.now(timezone.utc) > expiry
+
+    def get(self, source: str, event_id: str) -> CachedEvent | None:
+        """
+        Get a cached event by source and event_id.
+
+        Args:
+            source: The event source (e.g., "exa", "firecrawl", "eventbrite")
+            event_id: The event's unique ID within the source
+
+        Returns:
+            CachedEvent if found and not expired, None otherwise
+        """
+        with self._lock:
+            event = self._storage.get((source, event_id))
+            if event is None:
+                return None
+            if self._is_expired(event.cached_at):
+                del self._storage[(source, event_id)]
+                return None
+            return event
+
+    def get_many(self, source: str, event_ids: list[str]) -> list[CachedEvent]:
+        """
+        Get multiple cached events by source and event_ids.
+
+        Args:
+            source: The event source
+            event_ids: List of event IDs to retrieve
+
+        Returns:
+            List of cached events (excludes missing/expired entries)
+        """
+        if not event_ids:
+            return []
+
+        events = []
+        with self._lock:
+            for event_id in event_ids:
+                event = self._storage.get((source, event_id))
+                if event and not self._is_expired(event.cached_at):
+                    events.append(event)
+        return events
+
+    def put(
+        self,
+        source: str,
+        event_id: str,
+        title: str,
+        date: str,
+        location: str,
+        category: str,
+        description: str,
+        is_free: bool,
+        price_amount: int | None = None,
+        url: str | None = None,
+        logo_url: str | None = None,
+        raw_data: dict[str, Any] | None = None,
+    ) -> None:
+        """
+        Cache an event (upsert).
+
+        Args:
+            source: The event source (e.g., "exa", "firecrawl")
+            event_id: The event's unique ID
+            title: Event title
+            date: ISO 8601 datetime string
+            location: Venue/location string
+            category: Event category
+            description: Event description
+            is_free: Whether the event is free
+            price_amount: Price in cents (optional)
+            url: Event URL (optional)
+            logo_url: Event logo/image URL (optional)
+            raw_data: Original raw data dict for debugging (optional)
+        """
+        cached_at = datetime.now(timezone.utc)
+        event = CachedEvent(
+            source=source,
+            event_id=event_id,
+            title=title,
+            date=date,
+            location=location,
+            category=category,
+            description=description,
+            is_free=is_free,
+            price_amount=price_amount,
+            url=url,
+            logo_url=logo_url,
+            raw_data=raw_data,
+            cached_at=cached_at,
+        )
+        with self._lock:
+            self._storage[(source, event_id)] = event
+
+    def put_event(self, source: str, event: CachedEvent) -> None:
+        """
+        Cache a CachedEvent object.
+
+        Args:
+            source: The event source
+            event: CachedEvent to cache
+        """
+        self.put(
+            source=source,
+            event_id=event.event_id,
+            title=event.title,
+            date=event.date,
+            location=event.location,
+            category=event.category,
+            description=event.description,
+            is_free=event.is_free,
+            price_amount=event.price_amount,
+            url=event.url,
+            logo_url=event.logo_url,
+            raw_data=event.raw_data,
+        )
+
+    def put_many(self, source: str, events: list[dict[str, Any]]) -> int:
+        """
+        Cache multiple events.
+
+        Args:
+            source: The event source
+            events: List of event dicts with keys matching put() parameters
+
+        Returns:
+            Number of events cached
+        """
+        if not events:
+            return 0
+
+        cached_at = datetime.now(timezone.utc)
+        with self._lock:
+            for event_dict in events:
+                event = CachedEvent(
+                    source=source,
+                    event_id=event_dict["event_id"],
+                    title=event_dict["title"],
+                    date=event_dict["date"],
+                    location=event_dict["location"],
+                    category=event_dict["category"],
+                    description=event_dict["description"],
+                    is_free=event_dict.get("is_free", True),
+                    price_amount=event_dict.get("price_amount"),
+                    url=event_dict.get("url"),
+                    logo_url=event_dict.get("logo_url"),
+                    raw_data=event_dict.get("raw_data"),
+                    cached_at=cached_at,
+                )
+                self._storage[(source, event.event_id)] = event
+        return len(events)
+
+    def clear_expired(self) -> int:
+        """
+        Remove all expired entries from the cache.
+
+        Returns:
+            Number of entries removed
+        """
+        with self._lock:
+            expired_keys = [
+                key for key, event in self._storage.items()
+                if self._is_expired(event.cached_at)
+            ]
+            for key in expired_keys:
+                del self._storage[key]
+            if expired_keys:
+                logger.info("Cleared %d expired cache entries", len(expired_keys))
+            return len(expired_keys)
+
+    def clear_source(self, source: str) -> int:
+        """
+        Clear all cached events from a specific source.
+
+        Args:
+            source: The event source to clear
+
+        Returns:
+            Number of entries removed
+        """
+        with self._lock:
+            keys_to_remove = [
+                key for key in self._storage.keys()
+                if key[0] == source
+            ]
+            for key in keys_to_remove:
+                del self._storage[key]
+            return len(keys_to_remove)
+
+    def clear_all(self) -> int:
+        """
+        Clear all cached events.
+
+        Returns:
+            Number of entries removed
+        """
+        with self._lock:
+            count = len(self._storage)
+            self._storage.clear()
+            return count
+
+    def count(self, source: str | None = None) -> int:
+        """
+        Count cached events.
+
+        Args:
+            source: Optional source to filter by
+
+        Returns:
+            Number of cached events
+        """
+        with self._lock:
+            if source:
+                return sum(1 for key in self._storage if key[0] == source)
+            return len(self._storage)
 
 
 class EventCache:
@@ -73,6 +322,7 @@ class EventCache:
         self.ttl_hours = ttl_hours
         self._lock = threading.Lock()
         self._init_db()
+        logger.info("Event cache initialized with SQLite persistence: %s", self.db_path)
 
     def _init_db(self) -> None:
         """Initialize the database schema."""
@@ -408,40 +658,61 @@ class EventCache:
                 return cursor.fetchone()[0]
 
 
+# Type alias for cache return type
+Cache = EventCache | InMemoryEventCache
+
+
 # Global cache instance
-_cache: EventCache | None = None
+_cache: Cache | None = None
 
 
-def get_event_cache() -> EventCache:
+def get_event_cache() -> Cache:
     """
     Get the global event cache instance.
 
-    Returns a singleton EventCache for dependency injection in FastAPI.
+    Returns a singleton cache for dependency injection in FastAPI.
+    Automatically uses in-memory cache if DATABASE_URL is not set.
     """
     global _cache
     if _cache is None:
-        _cache = EventCache()
+        settings = get_settings()
+        if settings.has_database:
+            _cache = EventCache()
+        else:
+            _cache = InMemoryEventCache()
     return _cache
 
 
 def init_event_cache(
     db_path: str | Path | None = None,
     ttl_hours: int = DEFAULT_TTL_HOURS,
-) -> EventCache:
+    use_persistence: bool | None = None,
+) -> Cache:
     """
     Initialize the global event cache with custom settings.
 
-    Call this at application startup if you need a custom database path.
+    Call this at application startup if you need a custom database path
+    or want to explicitly enable/disable persistence.
 
     Args:
         db_path: Custom path for the SQLite database
         ttl_hours: Custom TTL in hours
+        use_persistence: Override persistence setting. If None, checks DATABASE_URL config.
 
     Returns:
-        The initialized EventCache
+        The initialized cache
     """
     global _cache
-    _cache = EventCache(db_path=db_path, ttl_hours=ttl_hours)
+    settings = get_settings()
+
+    if use_persistence is None:
+        use_persistence = settings.has_database
+
+    if use_persistence:
+        _cache = EventCache(db_path=db_path, ttl_hours=ttl_hours)
+    else:
+        _cache = InMemoryEventCache(ttl_hours=ttl_hours)
+
     return _cache
 
 
