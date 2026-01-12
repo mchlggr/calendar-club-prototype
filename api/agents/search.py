@@ -25,6 +25,7 @@ from api.services import (
     ScrapedEvent,
     get_event_source_registry,
 )
+from api.services.meetup import MeetupEvent
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +151,27 @@ def _convert_scraped_event(event: ScrapedEvent) -> EventResult:
     )
 
 
+def _convert_meetup_event(event: MeetupEvent) -> EventResult:
+    """Convert MeetupEvent to EventResult format."""
+    # Build location string
+    location = event.venue_name or "TBD"
+    if event.venue_address:
+        location = f"{location}, {event.venue_address}"
+
+    return EventResult(
+        id=f"meetup-{event.id}",
+        title=event.title,
+        date=event.start_time.isoformat(),
+        location=location,
+        category=event.category,
+        description=event.description[:200] if event.description else "",
+        is_free=event.is_free,
+        price_amount=event.price_amount,
+        distance_miles=5.0,  # Meetup radius is in miles but no exact distance
+        url=event.url,
+    )
+
+
 def _normalize_url(url: str | None) -> str | None:
     """Normalize URL for deduplication."""
     if not url:
@@ -172,23 +194,37 @@ def _normalize_title(title: str) -> str:
 
 
 def _deduplicate_events(events: list[EventResult]) -> list[EventResult]:
-    """Remove duplicate events based on URL or title similarity."""
+    """Remove duplicate events based on URL and title similarity."""
     seen_urls: set[str] = set()
     seen_titles: set[str] = set()
     unique_events: list[EventResult] = []
 
     for event in events:
-        # Check URL-based dedup
         normalized_url = _normalize_url(event.url)
+
+        # Check URL duplicate
         if normalized_url and normalized_url in seen_urls:
+            logger.debug(
+                "📋 [Dedup] Removed (URL match) | id=%s title=%s url=%s",
+                event.id[:20] if event.id else "none",
+                event.title[:40] if event.title else "untitled",
+                normalized_url[:60],
+            )
             continue
 
-        # Check title-based dedup
         normalized_title = _normalize_title(event.title)
+
+        # Check title duplicate
         if normalized_title in seen_titles:
+            logger.debug(
+                "📋 [Dedup] Removed (title match) | id=%s title=%s normalized=%s",
+                event.id[:20] if event.id else "none",
+                event.title[:40] if event.title else "untitled",
+                normalized_title[:40],
+            )
             continue
 
-        # Mark as seen
+        # Event is unique, track it
         if normalized_url:
             seen_urls.add(normalized_url)
         seen_titles.add(normalized_title)
@@ -211,6 +247,8 @@ def _convert_source_results(
                 events.append(_convert_exa_result(result))
             elif source_name == "posh" and isinstance(result, ScrapedEvent):
                 events.append(_convert_scraped_event(result))
+            elif source_name == "meetup" and isinstance(result, MeetupEvent):
+                events.append(_convert_meetup_event(result))
             else:
                 # Unknown source type - skip
                 logger.debug("Skipping unknown result type from %s", source_name)
@@ -302,6 +340,15 @@ async def search_events(profile: SearchProfile) -> SearchResult:
                         source_name,
                         len(converted),
                     )
+                    # Log individual events at DEBUG level
+                    if logger.isEnabledFor(logging.DEBUG):
+                        for event in converted:
+                            logger.debug(
+                                "📋 [Search] Event from source | source=%s id=%s title=%s",
+                                source_name,
+                                event.id[:20] if event.id else "none",
+                                event.title[:50] if event.title else "untitled",
+                            )
                 else:
                     logger.debug(
                         "📭 [Search] Source empty | source=%s",
@@ -326,8 +373,26 @@ async def search_events(profile: SearchProfile) -> SearchResult:
         )
 
         # Sort by date and limit
-        unique_events.sort(key=lambda e: e.date if e.date else "")
-        unique_events = unique_events[:15]
+        sorted_events = sorted(unique_events, key=lambda e: e.date if e.date else "")
+        unique_events = sorted_events[:15]
+
+        # Log truncation if events were cut
+        if len(unique_events) < len(sorted_events):
+            truncated_count = len(sorted_events) - len(unique_events)
+            logger.debug(
+                "📋 [Search] Truncated results | kept=%d removed=%d",
+                len(unique_events),
+                truncated_count,
+            )
+            # Log which events were truncated
+            if logger.isEnabledFor(logging.DEBUG):
+                for event in sorted_events[15:]:
+                    logger.debug(
+                        "📋 [Search] Truncated event | id=%s title=%s date=%s",
+                        event.id[:20] if event.id else "none",
+                        event.title[:40] if event.title else "untitled",
+                        event.date[:20] if event.date else "no-date",
+                    )
 
         return SearchResult(
             events=unique_events,

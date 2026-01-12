@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -25,6 +26,7 @@ from api.services import (
     register_exa_source,
 )
 from api.services.firecrawl import register_posh_source
+from api.services.meetup import register_meetup_source
 from api.services.background_tasks import get_background_task_manager
 from api.services.calendar import CalendarEvent, create_ics_event, create_ics_multiple
 from api.services.google_calendar import (
@@ -42,6 +44,7 @@ logger = logging.getLogger(__name__)
 
 # Register event sources
 register_eventbrite_source()
+# register_meetup_source()
 register_exa_source()
 register_posh_source()
 
@@ -138,30 +141,45 @@ async def stream_chat_response(
     3. SearchAgent presents results and handles refinement
     4. Background Websets discovery pushes more_events later
     """
+    # Generate trace ID for this request
+    trace_id = str(uuid.uuid4())[:8]  # Short trace ID for readability
+
     sse_manager = get_sse_manager()
     bg_manager = get_background_task_manager()
     settings = get_settings()
     connection = None
 
+    logger.debug(
+        "🔍 [Chat] Request started | trace=%s session=%s",
+        trace_id,
+        session_id or "None",
+    )
+
     # Register SSE connection for background event delivery
     if session_id:
         connection = await sse_manager.register(session_id)
         logger.debug(
-            "💬 [Chat] Message received | session=%s length=%d msg=%s",
+            "💬 [Chat] Message received | trace=%s session=%s length=%d msg=%s",
+            trace_id,
             session_id,
             len(message),
             message[:50],
         )
     else:
         logger.debug(
-            "💬 [Chat] Message received | session=None length=%d msg=%s",
+            "💬 [Chat] Message received | trace=%s session=None length=%d msg=%s",
+            trace_id,
             len(message),
             message[:50],
         )
 
     try:
         # Phase 1: Run ClarifyingAgent to gather/refine preferences
-        logger.debug("🤔 [Clarify] Agent starting | session=%s", session_id or "None")
+        logger.debug(
+            "🤔 [Clarify] Agent starting | trace=%s session=%s",
+            trace_id,
+            session_id or "None",
+        )
         clarify_start = time.perf_counter()
         result = await Runner.run(
             clarifying_agent,
@@ -170,7 +188,8 @@ async def stream_chat_response(
         )
         clarify_elapsed = time.perf_counter() - clarify_start
         logger.debug(
-            "✅ [Clarify] Agent complete | duration=%.2fs ready_to_search=%s",
+            "✅ [Clarify] Agent complete | trace=%s duration=%.2fs ready_to_search=%s",
+            trace_id,
             clarify_elapsed,
             result.final_output.ready_to_search if result.final_output else False,
         )
@@ -200,7 +219,8 @@ async def stream_chat_response(
             if output.ready_to_search and output.search_profile:
                 profile = output.search_profile
                 logger.debug(
-                    "🔍 [Search] Handoff | categories=%s time_window=%s keywords=%s",
+                    "🔍 [Search] Handoff | trace=%s categories=%s time_window=%s keywords=%s",
+                    trace_id,
                     profile.categories,
                     profile.time_window,
                     profile.keywords[:3] if profile.keywords else None,
@@ -224,9 +244,22 @@ async def stream_chat_response(
                         }
                         for evt in search_result.events
                     ]
-                    yield sse_event("events", {"events": events_data})
+                    # Log individual events before streaming
+                    if logger.isEnabledFor(logging.DEBUG):
+                        for ev in events_data:
+                            ev_id = str(ev.get("id", "none"))[:20]
+                            ev_title = str(ev.get("title", "untitled"))[:50]
+                            logger.debug(
+                                "📋 [SSE] Streaming event | trace=%s session=%s id=%s title=%s",
+                                trace_id,
+                                session_id or "None",
+                                ev_id,
+                                ev_title,
+                            )
+                    yield sse_event("events", {"events": events_data, "trace_id": trace_id})
                     logger.debug(
-                        "📤 [SSE] Streaming events | session=%s count=%d",
+                        "📤 [SSE] Streaming events | trace=%s session=%s count=%d",
+                        trace_id,
                         session_id or "None",
                         len(events_data),
                     )
@@ -254,7 +287,8 @@ async def stream_chat_response(
                 else:
                     # No results found
                     logger.debug(
-                        "📭 [Search] No results | session=%s",
+                        "📭 [Search] No results | trace=%s session=%s",
+                        trace_id,
                         session_id or "None",
                     )
                     no_results_msg = "\n\nI couldn't find any events matching your criteria. "
@@ -267,7 +301,7 @@ async def stream_chat_response(
                         chunk = no_results_msg[i : i + 10]
                         yield sse_event("content", {"content": chunk})
 
-        logger.debug("✅ [SSE] Stream complete | session=%s", session_id or "None")
+        logger.debug("✅ [SSE] Stream complete | trace=%s session=%s", trace_id, session_id or "None")
         yield sse_event("done", {})
 
         # Keep connection alive briefly to receive background events

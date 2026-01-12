@@ -3,11 +3,12 @@
 import { useCallback, useRef, useState } from "react";
 import type { CalendarEvent } from "@/components/calendar";
 import {
-	type DiscoveryEventWire,
 	api,
 	type ChatStreamEvent,
+	type DiscoveryEventWire,
 	type QuickPickOption,
 } from "@/lib/api";
+import { debugLog } from "@/lib/debug";
 import { trackChatMessage, trackEventsDiscovered } from "@/lib/posthog";
 import { cn } from "@/lib/utils";
 import { ChatInput } from "./ChatInput";
@@ -129,12 +130,66 @@ export function DiscoveryChat({
 					setQuickPicks([]);
 				} else if (event.type === "events" && event.events) {
 					// Real events from backend - map to component type
+					const traceId = event.trace_id || "unknown";
+					debugLog("Events", "Received from backend", {
+						trace: traceId,
+						count: event.events.length,
+					});
+
+					// Log individual events before mapping
+					event.events.forEach((ev, i) => {
+						debugLog("Events", `Raw event ${i}`, {
+							id: ev.id,
+							title: ev.title?.slice(0, 50),
+							startTime: ev.startTime,
+						});
+					});
+
 					const mappedEvents = event.events.map(mapApiEventToCalendarEvent);
+
+					debugLog("Events", "Mapped to calendar format", {
+						count: mappedEvents.length,
+					});
+
 					setPendingResults(mappedEvents);
 					onResultsReady(mappedEvents);
 					trackEventsDiscovered({
 						count: mappedEvents.length,
 						query: userQuery,
+					});
+				} else if (event.type === "more_events" && event.events) {
+					// Background discovery results - merge with existing
+					debugLog("Events", "Background discovery results", {
+						count: event.events.length,
+						source: event.source,
+					});
+
+					const mappedEvents = event.events.map(mapApiEventToCalendarEvent);
+
+					// Merge with existing results, avoiding duplicates
+					setPendingResults((prev) => {
+						const existingIds = new Set(prev.map((e) => e.id));
+						const newEvents = mappedEvents.filter(
+							(e) => !existingIds.has(e.id),
+						);
+						debugLog("Events", "Merged background results", {
+							existing: prev.length,
+							new: newEvents.length,
+							total: prev.length + newEvents.length,
+						});
+						return [...prev, ...newEvents];
+					});
+
+					// Notify parent of updated results
+					onResultsReady(mappedEvents);
+
+					trackEventsDiscovered({
+						count: mappedEvents.length,
+					});
+				} else if (event.type === "background_search") {
+					// Background search started notification
+					debugLog("Events", "Background search started", {
+						message: event.message,
 					});
 				} else if (event.type === "done") {
 					// Guard against duplicate "done" events (React StrictMode, etc.)

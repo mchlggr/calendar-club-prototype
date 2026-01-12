@@ -29,6 +29,7 @@ from .exa_client import (
     register_exa_source,
 )
 from .firecrawl import (
+    BaseExtractor,
     FirecrawlClient,
     LumaEvent,
     LumaExtractor,
@@ -79,6 +80,7 @@ __all__ = [
     "ExaWebset",
     "get_exa_client",
     "register_exa_source",
+    "BaseExtractor",
     "FirecrawlClient",
     "LumaEvent",
     "LumaExtractor",

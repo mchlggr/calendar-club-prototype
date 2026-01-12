@@ -4,6 +4,8 @@
  * Only includes endpoints that are actually used by the frontend UI.
  */
 
+import { debugLog, debugWarn } from "./debug";
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -49,6 +51,8 @@ export interface ChatStreamEvent {
 		| "done"
 		| "error"
 		| "events"
+		| "more_events"
+		| "background_search"
 		| "action"
 		| "phase"
 		| "quick_picks"
@@ -63,6 +67,8 @@ export interface ChatStreamEvent {
 	events?: DiscoveryEventWire[];
 	phase?: string;
 	action?: string;
+	source?: string;
+	trace_id?: string;
 }
 
 export interface CalendarExportEvent {
@@ -169,10 +175,18 @@ export const api = {
 						if (!line.startsWith("data: ")) continue;
 						try {
 							const data = JSON.parse(line.slice(6)) as ChatStreamEvent;
+							debugLog("SSE", "Event received", {
+								type: data.type,
+								hasEvents: !!data.events,
+								eventCount: data.events?.length,
+							});
 							onChunk(data);
 						} catch (e) {
 							// Only skip JSON parsing errors, re-throw other errors
 							if (e instanceof SyntaxError) {
+								debugWarn("SSE", "JSON parse error (skipped)", {
+									line: line.slice(0, 100),
+								});
 								continue;
 							}
 							throw e;

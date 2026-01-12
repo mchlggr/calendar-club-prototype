@@ -13,8 +13,8 @@ export function PaperQuote({ className, children }: PaperQuoteProps) {
 			<p className="font-marker text-lg leading-relaxed text-text-primary md:text-xl">
 				{children || (
 					<>
-						&ldquo;Find events and meetups, then download a calendar file for your
-						week.&rdquo;
+						&ldquo;Find events and meetups, then download a calendar file for
+						your week.&rdquo;
 					</>
 				)}
 			</p>

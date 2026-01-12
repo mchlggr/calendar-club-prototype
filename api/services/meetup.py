@@ -8,6 +8,7 @@ API Documentation: https://www.meetup.com/graphql/guide/
 """
 
 import logging
+import time
 from datetime import datetime
 from typing import Any
 
@@ -16,6 +17,8 @@ from gql.transport.aiohttp import AIOHTTPTransport
 from pydantic import BaseModel
 
 from api.config import get_settings
+from api.models import SearchProfile
+from api.services.base import EventSource, get_event_source_registry
 
 logger = logging.getLogger(__name__)
 
@@ -290,3 +293,87 @@ def get_meetup_client() -> MeetupClient:
     if _client is None:
         _client = MeetupClient()
     return _client
+
+
+async def search_events_adapter(profile: SearchProfile) -> list[MeetupEvent]:
+    """
+    Adapter function for EventSourceRegistry.
+
+    Converts SearchProfile to Meetup search parameters and returns events.
+    """
+    start = time.perf_counter()
+    client = get_meetup_client()
+
+    # Build query from categories and keywords
+    query_parts = []
+    if hasattr(profile, "categories") and profile.categories:
+        query_parts.extend(profile.categories)
+    if hasattr(profile, "keywords") and profile.keywords:
+        query_parts.extend(profile.keywords)
+
+    query = " ".join(query_parts) if query_parts else "events"
+
+    # Extract time window
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+    if hasattr(profile, "time_window") and profile.time_window:
+        if profile.time_window.start:
+            start_value = profile.time_window.start
+            if isinstance(start_value, str):
+                start_date = datetime.fromisoformat(start_value)
+            else:
+                start_date = start_value
+        if profile.time_window.end:
+            end_value = profile.time_window.end
+            if isinstance(end_value, str):
+                end_date = datetime.fromisoformat(end_value)
+            else:
+                end_date = end_value
+
+    logger.debug(
+        "🌐 [Meetup] Starting search | query=%s start=%s end=%s",
+        query[:50],
+        start_date,
+        end_date,
+    )
+
+    events = await client.search_events(
+        query=query,
+        latitude=39.9612,  # Columbus, OH
+        longitude=-82.9988,
+        radius=50,
+        start_date=start_date,
+        end_date=end_date,
+        limit=15,
+    )
+
+    elapsed = time.perf_counter() - start
+    if events:
+        logger.debug(
+            "✅ [Meetup] Complete | events=%d duration=%.2fs",
+            len(events),
+            elapsed,
+        )
+    else:
+        logger.debug(
+            "📭 [Meetup] No events found | duration=%.2fs",
+            elapsed,
+        )
+
+    return events
+
+
+def register_meetup_source() -> None:
+    """Register Meetup as an event source."""
+    settings = get_settings()
+
+    source = EventSource(
+        name="meetup",
+        search_fn=search_events_adapter,
+        is_enabled_fn=lambda: bool(settings.meetup_access_token),
+        priority=15,  # Between Eventbrite (10) and Exa (20)
+        description="Meetup GraphQL API for community events",
+    )
+
+    registry = get_event_source_registry()
+    registry.register(source)

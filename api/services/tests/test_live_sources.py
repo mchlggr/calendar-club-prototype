@@ -82,6 +82,75 @@ from api.services.exa_client import (
 
 
 # ============================================================================
+# Logging Helpers
+# ============================================================================
+
+def log_header(source: str, test_name: str):
+    """Print a header for test output."""
+    print(f"\n{'='*70}")
+    print(f"[{source}] {test_name}")
+    print(f"{'='*70}")
+
+
+def log_scraped_event(event: "ScrapedEvent", index: int):
+    """Log key fields from a ScrapedEvent."""
+    print(f"\n  [{index}] {event.title}")
+    print(f"      Source: {event.source}")
+    print(f"      ID: {event.event_id}")
+    print(f"      URL: {event.url}")
+    if event.start_time:
+        print(f"      Start: {event.start_time}")
+    if event.venue_name:
+        print(f"      Venue: {event.venue_name}")
+    if event.venue_address:
+        print(f"      Address: {event.venue_address}")
+    print(f"      Free: {event.is_free}")
+    if event.price_amount:
+        print(f"      Price: ${event.price_amount / 100:.2f}")
+
+
+def log_eventbrite_event(event: "EventbriteEvent", index: int):
+    """Log key fields from an EventbriteEvent."""
+    print(f"\n  [{index}] {event.title}")
+    print(f"      ID: {event.id}")
+    print(f"      Start: {event.start_time}")
+    if event.end_time:
+        print(f"      End: {event.end_time}")
+    if event.venue_name:
+        print(f"      Venue: {event.venue_name}")
+    if event.venue_address:
+        print(f"      Address: {event.venue_address}")
+    print(f"      Free: {event.is_free}")
+    if event.url:
+        print(f"      URL: {event.url}")
+
+
+def log_exa_result(result: "ExaSearchResult", index: int):
+    """Log key fields from an ExaSearchResult."""
+    print(f"\n  [{index}] {result.title}")
+    print(f"      URL: {result.url}")
+    if result.score:
+        print(f"      Score: {result.score:.4f}")
+    if result.published_date:
+        print(f"      Published: {result.published_date}")
+    if result.author:
+        print(f"      Author: {result.author}")
+    if result.highlights:
+        print(f"      Highlights: {result.highlights[:2]}")  # First 2 highlights
+
+
+def log_raw_dict(data: dict, label: str = "Response"):
+    """Log raw dict response with key fields."""
+    print(f"\n  {label}:")
+    print(f"      Keys: {list(data.keys())}")
+    if "markdown" in data:
+        content = data["markdown"][:200] if data["markdown"] else "(empty)"
+        print(f"      Markdown preview: {content}...")
+    if "extract" in data:
+        print(f"      Extract: {data['extract']}")
+
+
+# ============================================================================
 # Skip Conditions
 # ============================================================================
 
@@ -154,6 +223,8 @@ class TestFirecrawlClientLive:
     @pytest.mark.asyncio
     async def test_scrape_posh_homepage(self, firecrawl_client):
         """Test scraping Posh homepage returns valid response."""
+        log_header("Firecrawl", "Scrape Posh Homepage")
+
         result = await firecrawl_client.scrape(
             url="https://posh.vip",
             formats=["markdown"],
@@ -161,11 +232,14 @@ class TestFirecrawlClientLive:
 
         # Should return dict with data (may be empty if blocked)
         assert isinstance(result, dict)
-        # No exception means success - content may vary
+        log_raw_dict(result, "Scrape Result")
+        print(f"\n  SUCCESS: Got response with {len(result)} keys")
 
     @pytest.mark.asyncio
     async def test_scrape_with_extraction(self, firecrawl_client):
         """Test scraping with LLM extraction schema."""
+        log_header("Firecrawl", "Scrape with LLM Extraction")
+
         schema = {
             "type": "object",
             "properties": {
@@ -181,11 +255,14 @@ class TestFirecrawlClientLive:
         )
 
         assert isinstance(result, dict)
-        # Extract field may or may not be present depending on page
+        log_raw_dict(result, "Extraction Result")
+        print(f"\n  SUCCESS: Got extraction response")
 
     @pytest.mark.asyncio
     async def test_crawl_posh_city(self, firecrawl_client):
         """Test crawling Posh city page."""
+        log_header("Firecrawl", "Crawl Posh Columbus")
+
         results = await firecrawl_client.crawl(
             url="https://posh.vip/c/columbus",
             max_depth=1,
@@ -194,9 +271,12 @@ class TestFirecrawlClientLive:
 
         # Should return list (may be empty if site blocks crawlers)
         assert isinstance(results, list)
-        # Each result should be a dict if any returned
-        for result in results:
+        print(f"\n  Crawled pages: {len(results)}")
+        for i, result in enumerate(results):
             assert isinstance(result, dict)
+            url = result.get("url", result.get("metadata", {}).get("url", "unknown"))
+            print(f"    [{i}] {url}")
+        print(f"\n  SUCCESS: Crawled {len(results)} pages")
 
 
 @pytest.mark.integration
@@ -206,6 +286,8 @@ class TestPoshExtractorLive:
     @pytest.mark.asyncio
     async def test_discover_events_columbus(self, posh_extractor):
         """Test discovering events for Columbus."""
+        log_header("Posh", "Discover Events - Columbus")
+
         events = await posh_extractor.discover_events(
             city="columbus",
             limit=5,
@@ -213,26 +295,37 @@ class TestPoshExtractorLive:
 
         # Should return list (may be empty if no events or blocked)
         assert isinstance(events, list)
+        print(f"\n  Total events found: {len(events)}")
 
-        # If we got events, validate structure
-        for event in events:
+        # If we got events, validate structure and log details
+        for i, event in enumerate(events):
             assert isinstance(event, ScrapedEvent)
             assert event.source == "posh"
             assert event.title  # Title is required
             assert event.url  # URL is required
             assert event.event_id  # ID is required
+            log_scraped_event(event, i)
+
+        print(f"\n  SUCCESS: Found {len(events)} Posh events in Columbus")
 
     @pytest.mark.asyncio
     async def test_discover_events_new_york(self, posh_extractor):
         """Test discovering events for different city."""
+        log_header("Posh", "Discover Events - New York")
+
         events = await posh_extractor.discover_events(
             city="new-york",
             limit=3,
         )
 
         assert isinstance(events, list)
-        for event in events:
+        print(f"\n  Total events found: {len(events)}")
+
+        for i, event in enumerate(events):
             assert isinstance(event, ScrapedEvent)
+            log_scraped_event(event, i)
+
+        print(f"\n  SUCCESS: Found {len(events)} Posh events in New York")
 
 
 # ============================================================================
@@ -250,6 +343,8 @@ class TestEventbriteClientLive:
     @pytest.mark.asyncio
     async def test_search_events_basic(self, eventbrite_client):
         """Test basic event search for Columbus."""
+        log_header("Eventbrite", "Basic Search - Columbus")
+
         events = await eventbrite_client.search_events(
             location="Columbus, OH",
             page_size=5,
@@ -257,19 +352,26 @@ class TestEventbriteClientLive:
 
         # Should return list (may be empty if API unavailable)
         assert isinstance(events, list)
+        print(f"\n  Total events found: {len(events)}")
 
         # If we got events, validate structure
-        for event in events:
+        for i, event in enumerate(events):
             assert isinstance(event, EventbriteEvent)
             assert event.id
             assert event.title
             assert event.start_time
+            log_eventbrite_event(event, i)
+
+        print(f"\n  SUCCESS: Found {len(events)} Eventbrite events in Columbus")
 
     @pytest.mark.asyncio
     async def test_search_events_with_dates(self, eventbrite_client):
         """Test event search with date range filter."""
+        log_header("Eventbrite", "Search with Date Filter")
+
         start = datetime.now(UTC)
         end = start + timedelta(days=30)
+        print(f"\n  Date range: {start.date()} to {end.date()}")
 
         events = await eventbrite_client.search_events(
             location="Columbus, OH",
@@ -279,15 +381,20 @@ class TestEventbriteClientLive:
         )
 
         assert isinstance(events, list)
+        print(f"\n  Total events found: {len(events)}")
 
         # If events returned, dates should be in range
-        for event in events:
+        for i, event in enumerate(events):
             assert isinstance(event, EventbriteEvent)
-            # Note: API may not strictly enforce date filters
+            log_eventbrite_event(event, i)
+
+        print(f"\n  SUCCESS: Found {len(events)} events in date range")
 
     @pytest.mark.asyncio
     async def test_search_events_free_only(self, eventbrite_client):
         """Test event search filtering for free events."""
+        log_header("Eventbrite", "Free Events Only")
+
         events = await eventbrite_client.search_events(
             location="Columbus, OH",
             free_only=True,
@@ -295,15 +402,20 @@ class TestEventbriteClientLive:
         )
 
         assert isinstance(events, list)
+        print(f"\n  Total free events found: {len(events)}")
 
         # If events returned, they should be free
-        for event in events:
+        for i, event in enumerate(events):
             assert isinstance(event, EventbriteEvent)
-            # Note: is_free defaults to True, so this validates structure
+            log_eventbrite_event(event, i)
+
+        print(f"\n  SUCCESS: Found {len(events)} free events")
 
     @pytest.mark.asyncio
     async def test_search_events_with_categories(self, eventbrite_client):
         """Test event search with category filter."""
+        log_header("Eventbrite", "Category Filter (tech, ai)")
+
         events = await eventbrite_client.search_events(
             location="Columbus, OH",
             categories=["tech", "ai"],
@@ -311,20 +423,32 @@ class TestEventbriteClientLive:
         )
 
         assert isinstance(events, list)
-        for event in events:
+        print(f"\n  Total tech/ai events found: {len(events)}")
+
+        for i, event in enumerate(events):
             assert isinstance(event, EventbriteEvent)
+            log_eventbrite_event(event, i)
+
+        print(f"\n  SUCCESS: Found {len(events)} tech/ai events")
 
     @pytest.mark.asyncio
     async def test_search_events_different_location(self, eventbrite_client):
         """Test event search for different location."""
+        log_header("Eventbrite", "Search - New York")
+
         events = await eventbrite_client.search_events(
             location="New York, NY",
             page_size=3,
         )
 
         assert isinstance(events, list)
-        for event in events:
+        print(f"\n  Total events found: {len(events)}")
+
+        for i, event in enumerate(events):
             assert isinstance(event, EventbriteEvent)
+            log_eventbrite_event(event, i)
+
+        print(f"\n  SUCCESS: Found {len(events)} events in New York")
 
 
 # ============================================================================
@@ -338,56 +462,82 @@ class TestExaClientLive:
     @pytest.mark.asyncio
     async def test_search_basic(self, exa_client):
         """Test basic neural search."""
+        log_header("Exa", "Basic Neural Search")
+        query = "tech events Columbus Ohio"
+        print(f"\n  Query: {query}")
+
         results = await exa_client.search(
-            query="tech events Columbus Ohio",
+            query=query,
             num_results=5,
         )
 
         # Should return list (may be empty for obscure queries)
         assert isinstance(results, list)
+        print(f"\n  Total results: {len(results)}")
 
-        for result in results:
+        for i, result in enumerate(results):
             assert isinstance(result, ExaSearchResult)
             assert result.url
             assert result.title
+            log_exa_result(result, i)
+
+        print(f"\n  SUCCESS: Found {len(results)} search results")
 
     @pytest.mark.asyncio
     async def test_search_with_text_content(self, exa_client):
         """Test search with full text content included."""
+        log_header("Exa", "Search with Text Content")
+        query = "artificial intelligence conferences 2026"
+        print(f"\n  Query: {query}")
+
         results = await exa_client.search(
-            query="artificial intelligence conferences 2026",
+            query=query,
             num_results=3,
             include_text=True,
             include_highlights=True,
         )
 
         assert isinstance(results, list)
+        print(f"\n  Total results: {len(results)}")
 
         # If results returned, some should have text
-        for result in results:
+        for i, result in enumerate(results):
             assert isinstance(result, ExaSearchResult)
-            # text and highlights may or may not be present
+            log_exa_result(result, i)
+            if result.text:
+                print(f"      Text preview: {result.text[:150]}...")
+
+        print(f"\n  SUCCESS: Found {len(results)} results with text content")
 
     @pytest.mark.asyncio
     async def test_search_with_domain_filter(self, exa_client):
         """Test search with domain filtering."""
+        log_header("Exa", "Search with Domain Filter")
+        domains = ["meetup.com", "eventbrite.com"]
+        print(f"\n  Domains: {domains}")
+
         results = await exa_client.search(
             query="tech meetups",
             num_results=5,
-            include_domains=["meetup.com", "eventbrite.com"],
+            include_domains=domains,
         )
 
         assert isinstance(results, list)
+        print(f"\n  Total results: {len(results)}")
 
         # If results returned, they should be from specified domains
-        for result in results:
+        for i, result in enumerate(results):
             assert isinstance(result, ExaSearchResult)
-            # Domain filtering may not be perfect, just verify structure
+            log_exa_result(result, i)
+
+        print(f"\n  SUCCESS: Found {len(results)} results from filtered domains")
 
     @pytest.mark.asyncio
     async def test_search_with_date_filter(self, exa_client):
         """Test search with publication date filter."""
+        log_header("Exa", "Search with Date Filter")
         start_date = datetime.now(UTC) - timedelta(days=30)
+        print(f"\n  Published after: {start_date.date()}")
 
         results = await exa_client.search(
             query="startup events",
@@ -396,20 +546,34 @@ class TestExaClientLive:
         )
 
         assert isinstance(results, list)
-        for result in results:
+        print(f"\n  Total results: {len(results)}")
+
+        for i, result in enumerate(results):
             assert isinstance(result, ExaSearchResult)
+            log_exa_result(result, i)
+
+        print(f"\n  SUCCESS: Found {len(results)} recent results")
 
     @pytest.mark.asyncio
     async def test_find_similar(self, exa_client):
         """Test finding pages similar to a given URL."""
+        log_header("Exa", "Find Similar Pages")
+        url = "https://www.eventbrite.com"
+        print(f"\n  Source URL: {url}")
+
         results = await exa_client.find_similar(
-            url="https://www.eventbrite.com",
+            url=url,
             num_results=3,
         )
 
         assert isinstance(results, list)
-        for result in results:
+        print(f"\n  Total similar pages: {len(results)}")
+
+        for i, result in enumerate(results):
             assert isinstance(result, ExaSearchResult)
+            log_exa_result(result, i)
+
+        print(f"\n  SUCCESS: Found {len(results)} similar pages")
 
 
 @pytest.mark.integration
@@ -424,8 +588,12 @@ class TestExaWebsetsLive:
     @pytest.mark.asyncio
     async def test_create_webset(self, exa_client):
         """Test creating a webset."""
+        log_header("Exa Websets", "Create Webset")
+        query = "AI technology events 2026"
+        print(f"\n  Query: {query}")
+
         webset_id = await exa_client.create_webset(
-            query="AI technology events 2026",
+            query=query,
             count=10,
         )
 
@@ -434,38 +602,60 @@ class TestExaWebsetsLive:
         if webset_id is not None:
             assert isinstance(webset_id, str)
             assert len(webset_id) > 0
+            print(f"\n  Webset ID: {webset_id}")
+            print(f"\n  SUCCESS: Created webset")
+        else:
+            print(f"\n  WARNING: Webset creation returned None (quota/API issue)")
 
     @pytest.mark.asyncio
     async def test_create_webset_with_criteria(self, exa_client):
         """Test creating a webset with additional criteria."""
+        log_header("Exa Websets", "Create Webset with Criteria")
+        query = "machine learning conferences"
+        criteria = "Must be in-person events in the United States"
+        print(f"\n  Query: {query}")
+        print(f"  Criteria: {criteria}")
+
         webset_id = await exa_client.create_webset(
-            query="machine learning conferences",
+            query=query,
             count=5,
-            criteria="Must be in-person events in the United States",
+            criteria=criteria,
         )
 
         if webset_id is not None:
             assert isinstance(webset_id, str)
+            print(f"\n  Webset ID: {webset_id}")
+            print(f"\n  SUCCESS: Created webset with criteria")
+        else:
+            print(f"\n  WARNING: Webset creation returned None (quota/API issue)")
 
     @pytest.mark.asyncio
     async def test_webset_creation_and_poll(self, exa_client):
         """Test full webset workflow: create and poll for status."""
         import asyncio
 
+        log_header("Exa Websets", "Full Workflow (Create + Poll)")
+        query = "tech meetups Ohio"
+        print(f"\n  Query: {query}")
+
         # Create webset
         webset_id = await exa_client.create_webset(
-            query="tech meetups Ohio",
+            query=query,
             count=5,
         )
 
         if webset_id is None:
+            print(f"\n  WARNING: Webset creation failed - may be quota/API issue")
             pytest.skip("Webset creation failed - may be quota/API issue")
+
+        print(f"\n  Webset ID: {webset_id}")
 
         # Poll for status (with timeout)
         max_attempts = 6  # 6 attempts * 10 seconds = 60 seconds max
         webset = None
 
-        for _ in range(max_attempts):
+        for attempt in range(max_attempts):
+            print(f"\n  Polling attempt {attempt + 1}/{max_attempts}...")
             webset = await exa_client.get_webset(webset_id)
 
             if webset is None:
@@ -475,6 +665,10 @@ class TestExaWebsetsLive:
             assert webset.id == webset_id
             assert webset.status in ["running", "completed", "failed"]
 
+            print(f"    Status: {webset.status}")
+            if webset.num_results:
+                print(f"    Results so far: {webset.num_results}")
+
             if webset.status in ["completed", "failed"]:
                 break
 
@@ -482,9 +676,16 @@ class TestExaWebsetsLive:
 
         # Validate final state
         assert webset is not None
+        print(f"\n  Final status: {webset.status}")
+
         if webset.status == "completed" and webset.results:
-            for result in webset.results:
+            print(f"  Total results: {len(webset.results)}")
+            for i, result in enumerate(webset.results):
                 assert isinstance(result, ExaSearchResult)
+                log_exa_result(result, i)
+            print(f"\n  SUCCESS: Webset completed with {len(webset.results)} results")
+        else:
+            print(f"\n  Webset finished with status: {webset.status}")
 
 
 # ============================================================================
@@ -498,28 +699,40 @@ class TestAllSourcesLive:
     @pytest.mark.asyncio
     async def test_all_clients_instantiate(self):
         """Test that all clients can be created with env var keys."""
+        log_header("Combined", "Client Instantiation Test")
+
         clients = []
+        client_names = []
 
         # Try each client - they should not raise on instantiation
         if os.getenv("FIRECRAWL_API_KEY"):
             client = FirecrawlClient()
             clients.append(client)
+            client_names.append("FirecrawlClient")
+            print(f"\n  Created: FirecrawlClient")
 
         if os.getenv("EVENTBRITE_API_KEY"):
             client = EventbriteClient()
             clients.append(client)
+            client_names.append("EventbriteClient")
+            print(f"  Created: EventbriteClient")
 
         if os.getenv("EXA_API_KEY"):
             client = ExaClient()
             clients.append(client)
+            client_names.append("ExaClient")
+            print(f"  Created: ExaClient")
 
         # At least one client should be available for this test to be meaningful
         if not clients:
+            print(f"\n  No API keys configured!")
             pytest.skip("No API keys configured - skipping combined test")
 
         # Cleanup
         for client in clients:
             await client.close()
+
+        print(f"\n  SUCCESS: Instantiated {len(clients)} clients: {', '.join(client_names)}")
 
     @pytest.mark.asyncio
     async def test_source_summary(self):
@@ -533,12 +746,16 @@ class TestAllSourcesLive:
         available = [name for name, has_key in sources.items() if has_key]
         missing = [name for name, has_key in sources.items() if not has_key]
 
-        print(f"\n{'='*60}")
+        print(f"\n{'='*70}")
         print("EVENT SOURCE INTEGRATION TEST SUMMARY")
-        print(f"{'='*60}")
-        print(f"Available sources: {', '.join(available) or 'None'}")
-        print(f"Missing API keys: {', '.join(missing) or 'None'}")
-        print(f"{'='*60}\n")
+        print(f"{'='*70}")
+        print(f"\n  Available sources ({len(available)}): {', '.join(available) or 'None'}")
+        print(f"  Missing API keys ({len(missing)}): {', '.join(missing) or 'None'}")
+        print(f"\n  Environment variables checked:")
+        print(f"    FIRECRAWL_API_KEY: {'SET' if sources['Firecrawl/Posh'] else 'NOT SET'}")
+        print(f"    EVENTBRITE_API_KEY: {'SET' if sources['Eventbrite'] else 'NOT SET'}")
+        print(f"    EXA_API_KEY: {'SET' if sources['Exa'] else 'NOT SET'}")
+        print(f"\n{'='*70}")
 
         # Always pass - this is informational
         assert True

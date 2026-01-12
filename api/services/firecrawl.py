@@ -1,24 +1,22 @@
 """
 Firecrawl-based web scraping for event discovery.
 
-Provides extractors for various event platforms using Firecrawl's
-structured extraction capabilities.
+Provides extensible extractors for various event platforms using Firecrawl's
+structured extraction capabilities via the official SDK.
 """
 
 import logging
 import os
 import re
+from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
-import httpx
+from firecrawl import AsyncFirecrawl
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
-
-# Firecrawl API configuration
-FIRECRAWL_API_URL = "https://api.firecrawl.dev/v1"
 
 
 class ScrapedEvent(BaseModel):
@@ -42,35 +40,29 @@ class ScrapedEvent(BaseModel):
 
 class FirecrawlClient:
     """
-    Async client for Firecrawl API.
+    Async client wrapper for Firecrawl SDK.
 
-    Firecrawl provides web scraping with LLM-based extraction.
+    Provides a thin wrapper around AsyncFirecrawl with lazy initialization
+    and consistent error handling.
     """
 
     def __init__(self, api_key: str | None = None):
         self.api_key = api_key or os.getenv("FIRECRAWL_API_KEY")
-        self._client: httpx.AsyncClient | None = None
+        self._client: AsyncFirecrawl | None = None
 
-    async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create the HTTP client."""
+    def _get_client(self) -> AsyncFirecrawl:
+        """Get or create the SDK client."""
         if self._client is None:
             if not self.api_key:
                 raise ValueError("FIRECRAWL_API_KEY not configured")
-            self._client = httpx.AsyncClient(
-                base_url=FIRECRAWL_API_URL,
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-                timeout=60.0,
-            )
+            self._client = AsyncFirecrawl(api_key=self.api_key)
         return self._client
 
     async def close(self) -> None:
-        """Close the HTTP client."""
-        if self._client:
-            await self._client.aclose()
-            self._client = None
+        """Close the client (no-op for SDK, kept for compatibility)."""
+        # AsyncFirecrawl doesn't have a close method, but we keep this
+        # for API compatibility
+        self._client = None
 
     async def scrape(
         self,
@@ -83,33 +75,34 @@ class FirecrawlClient:
 
         Args:
             url: The URL to scrape
-            formats: Output formats (e.g., ["markdown", "html", "extract"])
+            formats: Output formats (e.g., ["markdown", "html"])
             extract_schema: JSON schema for structured extraction
 
         Returns:
             Scraped content with requested formats
         """
-        client = await self._get_client()
+        client = self._get_client()
 
-        payload: dict[str, Any] = {"url": url}
-        if formats:
-            payload["formats"] = formats
+        format_list: list[Any] = list(formats) if formats else ["markdown"]
+
+        # Add extraction format if schema provided
         if extract_schema:
-            payload["extract"] = {"schema": extract_schema}
+            format_list.append({
+                "type": "json",
+                "schema": extract_schema
+            })
 
-        response = await client.post("/scrape", json=payload)
-        response.raise_for_status()
-
-        data = response.json()
-        if not data.get("success"):
-            raise ValueError(f"Scrape failed: {data.get('error', 'Unknown error')}")
-
-        return data.get("data", {})
+        try:
+            result = await client.scrape(url, formats=format_list)
+            # SDK returns dict-like object, normalize to dict
+            return dict(result) if result else {}
+        except Exception as e:
+            logger.error("Firecrawl scrape error for %s: %s", url, e)
+            raise
 
     async def crawl(
         self,
         url: str,
-        max_depth: int = 2,
         limit: int = 10,
         include_patterns: list[str] | None = None,
         exclude_patterns: list[str] | None = None,
@@ -119,7 +112,6 @@ class FirecrawlClient:
 
         Args:
             url: Starting URL
-            max_depth: Maximum crawl depth
             limit: Maximum number of pages to crawl
             include_patterns: URL patterns to include
             exclude_patterns: URL patterns to exclude
@@ -127,29 +119,134 @@ class FirecrawlClient:
         Returns:
             List of scraped page data
         """
-        client = await self._get_client()
+        client = self._get_client()
 
-        payload: dict[str, Any] = {
-            "url": url,
-            "maxDepth": max_depth,
-            "limit": limit,
-        }
-        if include_patterns:
-            payload["includePaths"] = include_patterns
-        if exclude_patterns:
-            payload["excludePaths"] = exclude_patterns
-
-        response = await client.post("/crawl", json=payload)
-        response.raise_for_status()
-
-        data = response.json()
-        if not data.get("success"):
-            raise ValueError(f"Crawl failed: {data.get('error', 'Unknown error')}")
-
-        return data.get("data", [])
+        try:
+            result = await client.crawl(
+                url,
+                limit=limit,
+                include_paths=include_patterns,
+                exclude_paths=exclude_patterns,
+            )
+            # Extract data from crawl result
+            if hasattr(result, 'data'):
+                return list(result.data)
+            return list(result) if result else []
+        except Exception as e:
+            logger.error("Firecrawl crawl error for %s: %s", url, e)
+            raise
 
 
-class PoshExtractor:
+class BaseExtractor(ABC):
+    """
+    Base class for Firecrawl-based event extractors.
+
+    Subclass this to create extractors for different event platforms.
+    Each extractor defines its own extraction schema and parsing logic.
+    """
+
+    SOURCE_NAME: str = "unknown"
+    BASE_URL: str = ""
+    EVENT_SCHEMA: dict[str, Any] = {}
+    DEFAULT_CATEGORY: str = "community"
+
+    def __init__(self, client: FirecrawlClient | None = None):
+        self.client = client or get_firecrawl_client()
+
+    async def close(self) -> None:
+        """Close the client."""
+        await self.client.close()
+
+    @abstractmethod
+    def _extract_event_id(self, url: str) -> str:
+        """Extract event ID from URL. Must be implemented by subclass."""
+        pass
+
+    @abstractmethod
+    def _parse_extracted_data(
+        self,
+        url: str,
+        extracted: dict[str, Any],
+    ) -> ScrapedEvent | None:
+        """Parse extracted data into ScrapedEvent. Must be implemented by subclass."""
+        pass
+
+    async def extract_event(self, url: str) -> ScrapedEvent | None:
+        """
+        Extract event data from a single URL.
+
+        Args:
+            url: Event page URL
+
+        Returns:
+            ScrapedEvent if extraction successful, None otherwise
+        """
+        try:
+            data = await self.client.scrape(
+                url=url,
+                formats=["extract"],
+                extract_schema=self.EVENT_SCHEMA,
+            )
+
+            extracted = data.get("extract", {})
+            if not extracted.get("title"):
+                logger.warning("No title found in %s event: %s", self.SOURCE_NAME, url)
+                return None
+
+            return self._parse_extracted_data(url, extracted)
+
+        except Exception as e:
+            logger.error("Failed to extract %s event from %s: %s", self.SOURCE_NAME, url, e)
+            return None
+
+    async def _crawl_and_extract(
+        self,
+        discovery_url: str,
+        limit: int = 20,
+        include_patterns: list[str] | None = None,
+    ) -> list[ScrapedEvent]:
+        """
+        Crawl a listing page and extract events.
+
+        This is the core discovery logic that can be called by subclasses
+        with platform-specific URLs and patterns.
+
+        Args:
+            discovery_url: URL to crawl for event links
+            limit: Maximum number of events to return
+            include_patterns: URL patterns to include (e.g., ["/e/*"])
+
+        Returns:
+            List of discovered events
+        """
+        try:
+            pages = await self.client.crawl(
+                url=discovery_url,
+                limit=limit + 5,  # Buffer for failures
+                include_patterns=include_patterns,
+            )
+
+            events = []
+            for page in pages:
+                url = page.get("url", "") if isinstance(page, dict) else getattr(page, 'url', '')
+                if not url:
+                    continue
+
+                event = await self.extract_event(url)
+                if event:
+                    events.append(event)
+                    if len(events) >= limit:
+                        break
+
+            logger.info("Discovered %d %s events", len(events), self.SOURCE_NAME)
+            return events
+
+        except Exception as e:
+            logger.error("Failed to discover %s events: %s", self.SOURCE_NAME, e)
+            return []
+
+
+class PoshExtractor(BaseExtractor):
     """
     Extractor for Posh (posh.vip) events.
 
@@ -159,8 +256,8 @@ class PoshExtractor:
 
     SOURCE_NAME = "posh"
     BASE_URL = "https://posh.vip"
+    DEFAULT_CATEGORY = "nightlife"
 
-    # Schema for extracting event data from Posh pages
     EVENT_SCHEMA = {
         "type": "object",
         "properties": {
@@ -177,20 +274,12 @@ class PoshExtractor:
         "required": ["title"],
     }
 
-    def __init__(self, client: FirecrawlClient | None = None):
-        self.client = client or FirecrawlClient()
-
-    async def close(self) -> None:
-        """Close the client."""
-        await self.client.close()
-
     def _extract_event_id(self, url: str) -> str:
         """Extract event ID from Posh URL."""
-        # Posh URLs are typically: https://posh.vip/e/event-slug-123abc
         parsed = urlparse(url)
         path = parsed.path.strip("/")
         if path.startswith("e/"):
-            return path[2:]  # Remove 'e/' prefix
+            return path[2:]
         return path or url
 
     def _parse_datetime(
@@ -203,10 +292,8 @@ class PoshExtractor:
         try:
             import dateparser
 
-            # Combine date and time for parsing
             combined = date_str
             if time_str:
-                # Extract start time (before any dash or "to")
                 time_parts = re.split(r"\s*[-–to]\s*", time_str, maxsplit=1)
                 start_time = time_parts[0].strip()
                 combined = f"{date_str} {start_time}"
@@ -216,7 +303,6 @@ class PoshExtractor:
                 settings={"PREFER_DATES_FROM": "future"},
             )
 
-            # Parse end time if available
             end_dt = None
             if time_str and ("-" in time_str or "–" in time_str or " to " in time_str.lower()):
                 time_parts = re.split(r"\s*[-–]\s*|\s+to\s+", time_str, flags=re.IGNORECASE)
@@ -243,62 +329,41 @@ class PoshExtractor:
         if price_lower in ("free", "no cover", "complimentary", ""):
             return True, None
 
-        # Extract numeric price
         match = re.search(r"\$?(\d+(?:\.\d{2})?)", price_str)
         if match:
             price = float(match.group(1))
-            return False, int(price * 100)  # Store in cents
+            return False, int(price * 100)
 
         return True, None
 
-    async def extract_event(self, url: str) -> ScrapedEvent | None:
-        """
-        Extract event data from a Posh event page.
+    def _parse_extracted_data(
+        self,
+        url: str,
+        extracted: dict[str, Any],
+    ) -> ScrapedEvent | None:
+        """Parse Posh extracted data into ScrapedEvent."""
+        start_dt, end_dt = self._parse_datetime(
+            extracted.get("date"),
+            extracted.get("time"),
+        )
+        is_free, price_amount = self._parse_price(extracted.get("price"))
 
-        Args:
-            url: Posh event URL
-
-        Returns:
-            ScrapedEvent if extraction successful, None otherwise
-        """
-        try:
-            data = await self.client.scrape(
-                url=url,
-                formats=["extract"],
-                extract_schema=self.EVENT_SCHEMA,
-            )
-
-            extracted = data.get("extract", {})
-            if not extracted.get("title"):
-                logger.warning("No title found in Posh event: %s", url)
-                return None
-
-            start_dt, end_dt = self._parse_datetime(
-                extracted.get("date"),
-                extracted.get("time"),
-            )
-            is_free, price_amount = self._parse_price(extracted.get("price"))
-
-            return ScrapedEvent(
-                source=self.SOURCE_NAME,
-                event_id=self._extract_event_id(url),
-                title=extracted["title"],
-                description=extracted.get("description", ""),
-                start_time=start_dt,
-                end_time=end_dt,
-                venue_name=extracted.get("venue_name"),
-                venue_address=extracted.get("venue_address"),
-                category="nightlife",  # Posh is primarily nightlife/social
-                is_free=is_free,
-                price_amount=price_amount,
-                url=url,
-                logo_url=extracted.get("image_url"),
-                raw_data=extracted,
-            )
-
-        except Exception as e:
-            logger.error("Failed to extract Posh event from %s: %s", url, e)
-            return None
+        return ScrapedEvent(
+            source=self.SOURCE_NAME,
+            event_id=self._extract_event_id(url),
+            title=extracted["title"],
+            description=extracted.get("description", ""),
+            start_time=start_dt,
+            end_time=end_dt,
+            venue_name=extracted.get("venue_name"),
+            venue_address=extracted.get("venue_address"),
+            category=self.DEFAULT_CATEGORY,
+            is_free=is_free,
+            price_amount=price_amount,
+            url=url,
+            logo_url=extracted.get("image_url"),
+            raw_data=extracted,
+        )
 
     async def discover_events(
         self,
@@ -315,35 +380,14 @@ class PoshExtractor:
         Returns:
             List of discovered events
         """
-        try:
-            # Crawl the city's event listing page
-            city_url = urljoin(self.BASE_URL, f"/c/{city}")
+        from urllib.parse import urljoin
+        city_url = urljoin(self.BASE_URL, f"/c/{city}")
 
-            pages = await self.client.crawl(
-                url=city_url,
-                max_depth=1,
-                limit=limit + 5,  # Get extra in case some fail
-                include_patterns=["/e/*"],  # Only event pages
-            )
-
-            events = []
-            for page in pages:
-                url = page.get("url", "")
-                if "/e/" not in url:
-                    continue
-
-                event = await self.extract_event(url)
-                if event:
-                    events.append(event)
-                    if len(events) >= limit:
-                        break
-
-            logger.info("Discovered %d Posh events for %s", len(events), city)
-            return events
-
-        except Exception as e:
-            logger.error("Failed to discover Posh events for %s: %s", city, e)
-            return []
+        return await self._crawl_and_extract(
+            discovery_url=city_url,
+            limit=limit,
+            include_patterns=["/e/*"],
+        )
 
 
 # Singleton instances
@@ -370,25 +414,15 @@ def get_posh_extractor() -> PoshExtractor:
 async def search_events_adapter(profile: Any) -> list[ScrapedEvent]:
     """
     Adapter for registry pattern - searches Posh using a SearchProfile.
-
-    Args:
-        profile: SearchProfile with search criteria
-
-    Returns:
-        List of ScrapedEvent objects matching the profile
     """
     extractor = get_posh_extractor()
+    city = "columbus"  # TODO: Extract from profile.location
 
-    # Hardcoded location for now - future refactor will add location to SearchProfile
-    city = "columbus"
-
-    # Fetch all events for the city
     events = await extractor.discover_events(city=city, limit=30)
 
-    # Post-fetch filtering based on SearchProfile
+    # Post-fetch filtering
     filtered_events = []
     for event in events:
-        # Filter by time_window if specified
         if hasattr(profile, "time_window") and profile.time_window:
             if profile.time_window.start and event.start_time:
                 if event.start_time < profile.time_window.start:
@@ -397,7 +431,6 @@ async def search_events_adapter(profile: Any) -> list[ScrapedEvent]:
                 if event.start_time > profile.time_window.end:
                     continue
 
-        # Filter by free_only if specified
         if hasattr(profile, "free_only") and profile.free_only:
             if not event.is_free:
                 continue
@@ -417,13 +450,12 @@ def register_posh_source() -> None:
         name="posh",
         search_fn=search_events_adapter,
         is_enabled_fn=lambda: bool(api_key),
-        priority=25,  # Lower priority - scraping is slower than APIs
+        priority=25,
         description="Posh.vip nightlife and social events via Firecrawl scraping",
     )
     register_event_source(source)
 
 
-# Aliases for backward compatibility
+# Backward compatibility aliases
 LumaEvent = ScrapedEvent
 LumaExtractor = PoshExtractor
-
