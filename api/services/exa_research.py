@@ -129,9 +129,19 @@ class ExaResearchClient:
                 output_schema,
             )
 
-            task_id = getattr(result, 'id', None) or result.get('id') if isinstance(result, dict) else None
+            # Extract task ID - SDK returns ResearchRunningDto with research_id
+            task_id = None
+            if hasattr(result, 'research_id'):
+                task_id = result.research_id
+            elif hasattr(result, 'id'):
+                task_id = result.id
+            elif isinstance(result, dict):
+                task_id = result.get('research_id') or result.get('id')
+
             if task_id:
                 logger.debug("✅ [Exa Research] Task created | id=%s", task_id)
+            else:
+                logger.warning("🔬 [Exa Research] No task ID in response | type=%s result=%s", type(result).__name__, result)
             return task_id
 
         except Exception as e:
@@ -155,17 +165,22 @@ class ExaResearchClient:
             )
 
             status = getattr(result, 'status', 'unknown')
+            logger.debug("⏳ [Exa Research] Poll status | id=%s status=%s type=%s", task_id, status, type(result).__name__)
+
             results = None
 
-            if hasattr(result, 'results') and result.results:
+            # SDK may return 'events' (from output_schema) or 'results'
+            raw_events = getattr(result, 'events', None) or getattr(result, 'results', None)
+            if raw_events:
+                logger.debug("📊 [Exa Research] Got events | count=%d", len(raw_events))
                 results = [
                     ExaSearchResult(
-                        id=getattr(r, 'id', ''),
+                        id=getattr(r, 'url', '') or getattr(r, 'id', ''),
                         title=getattr(r, 'title', 'Untitled'),
                         url=getattr(r, 'url', ''),
-                        text=getattr(r, 'text', None),
+                        text=getattr(r, 'description', None) or getattr(r, 'text', None),
                     )
-                    for r in result.results
+                    for r in raw_events
                 ]
 
             return ExaResearchResult(
@@ -234,6 +249,7 @@ async def research_events_adapter(profile: Any) -> list[ExaSearchResult]:
         output_schema=ResearchEventsOutput,
     )
     if not task_id:
+        logger.warning("Exa research task failed to create")
         return []
 
     # Poll for results (max 60 seconds)

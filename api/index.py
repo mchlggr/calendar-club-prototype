@@ -47,15 +47,15 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 # Register event sources
-register_eventbrite_source()
+# register_eventbrite_source()
 # register_meetup_source()
-register_exa_source()
-register_posh_source()
-register_luma_source()
-register_partiful_source()
-register_meetup_scraper_source()
-register_facebook_source()
-register_river_source()
+# register_exa_source()
+# register_posh_source()
+# register_luma_source()
+# register_partiful_source()
+# register_meetup_scraper_source()
+# register_facebook_source()
+# register_river_source()
 register_exa_research_source()
 
 

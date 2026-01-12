@@ -342,7 +342,6 @@ class BaseExtractor(ABC):
         try:
             data = await self.client.scrape(
                 url=url,
-                formats=["extract"],
                 extract_schema=self.EVENT_SCHEMA,
             )
 

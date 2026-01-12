@@ -74,5 +74,7 @@ def configure_logging(settings: Settings | None = None) -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
+    # Suppress verbose third-party loggers
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("openai").setLevel(logging.WARNING)  # Suppresses openai._base_client, openai.agents, etc.

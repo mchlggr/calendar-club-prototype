@@ -547,13 +547,22 @@ async def search_events_adapter(profile: Any) -> list[ExaSearchResult]:
     Date ranges are included IN the query text (not as API filters) because
     Exa's date filters are for page publication date, not event date.
 
+    We DO add a 6-month recency filter for page publication to avoid stale results.
+
     Args:
         profile: SearchProfile with search criteria
 
     Returns:
         List of ExaSearchResult objects
     """
+    from datetime import timedelta
+
     client = get_exa_client()
+
+    # Calculate publication date range: 6 months ago to today
+    # This filters for recently published pages (not event dates)
+    today = datetime.now()
+    six_months_ago = today - timedelta(days=180)
 
     # Build search query with natural language for neural search
     query_parts = []
@@ -581,21 +590,20 @@ async def search_events_adapter(profile: Any) -> list[ExaSearchResult]:
     logger.debug(
         "📤 [Exa] Outbound Query | query='%s' num_results=%d",
         query,
-        10,
+        100,
     )
 
-    # NOTE: We intentionally do NOT use start_published_date/end_published_date
-    # because those filter by when a PAGE was published, not when an EVENT occurs.
-    # Instead, we include the date range in the natural language query above.
+    # NOTE: start_published_date/end_published_date filter by when a PAGE was published,
+    # not when an EVENT occurs. We use a 6-month recency filter to avoid stale pages.
 
     return await client.search(
         query=query,
-        num_results=10,
+        num_results=100,
         include_text=True,
         include_highlights=True,
         extract_events=True,  # Enable LLM extraction for structured event data
-        # No date filters - they filter page publication, not event dates
-        # No domain restrictions - let Exa search broadly for events
+        start_published_date=six_months_ago,  # Filter out pages older than 6 months
+        end_published_date=today,
     )
 
 
