@@ -37,6 +37,7 @@ interface ChatMessage {
 	id: string;
 	role: "user" | "agent";
 	content: string;
+	events?: CalendarEvent[];
 }
 
 /**
@@ -97,6 +98,7 @@ export function DiscoveryChat({
 	const streamAbortRef = useRef<{ abort: () => void } | null>(null);
 	const streamingMessageRef = useRef<string>("");
 	const hasProcessedDoneRef = useRef<boolean>(false);
+	const pendingResultsRef = useRef<CalendarEvent[]>([]);
 
 	const startChatStream = useCallback(
 		(userQuery: string, historyMessages: ChatMessage[]) => {
@@ -105,6 +107,7 @@ export function DiscoveryChat({
 			setStreamingMessage("");
 			streamingMessageRef.current = "";
 			hasProcessedDoneRef.current = false;
+			pendingResultsRef.current = [];
 			setIsProcessing(true);
 			setIsSearching(false);
 			// Hide quick picks while processing
@@ -152,6 +155,7 @@ export function DiscoveryChat({
 					});
 
 					setPendingResults(mappedEvents);
+					pendingResultsRef.current = mappedEvents;
 					onResultsReady(mappedEvents);
 					trackEventsDiscovered({
 						count: mappedEvents.length,
@@ -177,7 +181,9 @@ export function DiscoveryChat({
 							new: newEvents.length,
 							total: prev.length + newEvents.length,
 						});
-						return [...prev, ...newEvents];
+						const merged = [...prev, ...newEvents];
+						pendingResultsRef.current = merged;
+						return merged;
 					});
 
 					// Notify parent of updated results
@@ -196,8 +202,9 @@ export function DiscoveryChat({
 					if (hasProcessedDoneRef.current) return;
 					hasProcessedDoneRef.current = true;
 
-					// Stream complete - add full message using ref value
+					// Stream complete - add full message with events using ref values
 					const finalMessage = streamingMessageRef.current;
+					const finalEvents = pendingResultsRef.current;
 					if (finalMessage) {
 						setMessages((msgs) => [
 							...msgs,
@@ -205,6 +212,8 @@ export function DiscoveryChat({
 								id: crypto.randomUUID(),
 								role: "agent",
 								content: finalMessage,
+								// Capture events with this message for history persistence
+								events: finalEvents.length > 0 ? finalEvents : undefined,
 							},
 						]);
 					}
@@ -293,8 +302,14 @@ export function DiscoveryChat({
 		[sessionId, onSearch, startChatStream, messages],
 	);
 
-	// Determine if we should show results
-	const showResults = !isProcessing && pendingResults.length > 0;
+	// Check if the most recent message has events (for placeholder logic)
+	const lastMessageHasEvents =
+		messages.length > 0 &&
+		messages[messages.length - 1].events &&
+		(messages[messages.length - 1].events?.length ?? 0) > 0;
+	// Show "narrow it down" placeholder if we have results (either in last message or streaming)
+	const hasResults =
+		lastMessageHasEvents || (isProcessing && pendingResults.length > 0);
 
 	return (
 		<div
@@ -304,20 +319,31 @@ export function DiscoveryChat({
 			)}
 		>
 			{/* Chat messages - including streaming response and results */}
-			{(messages.length > 0 || isProcessing || showResults) && (
+			{(messages.length > 0 || isProcessing) && (
 				<div className="flex flex-col gap-4">
-					{/* Past messages */}
+					{/* Past messages with inline events */}
 					{messages.map((message) => (
-						<div
-							key={message.id}
-							className={cn(
-								"max-w-md rounded-lg px-4 py-3",
-								message.role === "user"
-									? "ml-auto bg-accent-orange text-white"
-									: "bg-brand-100 text-text-primary shadow-sm",
-							)}
-						>
-							<p className="text-sm">{message.content}</p>
+						<div key={message.id} className="flex flex-col gap-2">
+							<div
+								className={cn(
+									"max-w-md rounded-lg px-4 py-3",
+									message.role === "user"
+										? "ml-auto bg-accent-orange text-white"
+										: "bg-brand-100 text-text-primary shadow-sm",
+								)}
+							>
+								<p className="text-sm">{message.content}</p>
+							</div>
+							{/* Show events inline with agent messages that have them */}
+							{message.role === "agent" &&
+								message.events &&
+								message.events.length > 0 && (
+									<ResultsPreview
+										events={message.events}
+										totalCount={message.events.length}
+										onViewWeek={onViewWeek}
+									/>
+								)}
 						</div>
 					))}
 
@@ -359,8 +385,8 @@ export function DiscoveryChat({
 						</div>
 					)}
 
-					{/* Results integrated in chat flow */}
-					{showResults && (
+					{/* Live results preview during streaming */}
+					{isProcessing && pendingResults.length > 0 && (
 						<ResultsPreview
 							events={pendingResults}
 							totalCount={pendingResults.length}
@@ -390,7 +416,7 @@ export function DiscoveryChat({
 				disabled={isProcessing}
 				placeholder={
 					dynamicPlaceholder ??
-					(showResults ? "Narrow it down..." : "Search events...")
+					(hasResults ? "Narrow it down..." : "Search events...")
 				}
 			/>
 		</div>

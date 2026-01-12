@@ -38,7 +38,7 @@ Why do events recommended by the assistant not persist in chat history? When vie
 ```typescript
 interface ChatMessage {
   id: string;
-  role: "user" | "agent";
+  role: "user" | "agent"I'm not worried about persisting the events to a back-end session right now for recovery. Don't worry about that. I think the simplest thing is to embed them in the chat messages on the front-end when it's received. We'll probably want to refactor that later because it is a decision that's very particular and specific to this chat experience and that might evolve. But for now I think it's okay to do approach A ;
   content: string;
 }
 ```
