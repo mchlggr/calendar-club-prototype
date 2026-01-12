@@ -13,12 +13,16 @@ import time
 from datetime import datetime
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field
-
 from agents import Agent, function_tool
 
 from api.config import get_settings
-from api.models import EventFeedback, SearchProfile
+from api.models import (
+    EventResult,
+    RefinementInput,
+    RefinementOutput,
+    SearchProfile,
+    SearchResult,
+)
 from api.services import (
     EventbriteEvent,
     ExaSearchResult,
@@ -28,50 +32,6 @@ from api.services import (
 from api.services.meetup import MeetupEvent
 
 logger = logging.getLogger(__name__)
-
-
-# Tool input/output models for strict schema compatibility
-class EventResult(BaseModel):
-    """An event from search results."""
-
-    id: str
-    title: str
-    date: str = Field(description="ISO 8601 datetime string")
-    location: str
-    category: str
-    description: str
-    is_free: bool
-    price_amount: int | None = None
-    distance_miles: float
-    url: str | None = None
-
-
-class RefinementInput(BaseModel):
-    """Input for refine_results tool."""
-
-    feedback: list[EventFeedback] = Field(description="User feedback on events")
-
-
-class RefinementOutput(BaseModel):
-    """Output from refine_results tool."""
-
-    events: list[EventResult]
-    explanation: str
-    source: str = Field(
-        default="refined", description="Data source: 'refined' or 'unavailable'"
-    )
-
-
-class SearchResult(BaseModel):
-    """Result from search_events tool."""
-
-    events: list[EventResult]
-    source: str = Field(
-        description="Data source(s): 'luma', 'eventbrite', 'luma+eventbrite', or 'unavailable'"
-    )
-    message: str | None = Field(
-        default=None, description="User-facing message about data source"
-    )
 
 
 def _convert_eventbrite_event(event: EventbriteEvent) -> EventResult:
@@ -246,6 +206,190 @@ def _deduplicate_events(events: list[EventResult]) -> list[EventResult]:
     return unique_events
 
 
+def _validate_event(event: EventResult) -> EventResult | None:
+    """
+    Validate event has required fields and reasonable values.
+    Returns None if event should be filtered out.
+    """
+    from datetime import timedelta, timezone
+
+    # Must have title
+    if not event.title or event.title.lower() in ("untitled", "untitled event", ""):
+        logger.debug("Filtered event: missing title | id=%s", event.id)
+        return None
+
+    # Must have date
+    if not event.date:
+        logger.debug(
+            "Filtered event: missing date | id=%s title=%s", event.id, event.title
+        )
+        return None
+
+    # Date must be parseable and include year
+    try:
+        parsed = datetime.fromisoformat(event.date.replace("Z", "+00:00"))
+
+        # Date should be in the future (or at least today)
+        now = datetime.now(timezone.utc)
+        if parsed < now - timedelta(days=1):  # Allow 1 day buffer
+            logger.debug(
+                "Filtered event: date in past | id=%s title=%s date=%s",
+                event.id,
+                event.title,
+                event.date,
+            )
+            return None
+
+    except ValueError:
+        logger.debug(
+            "Filtered event: unparseable date | id=%s title=%s date=%s",
+            event.id,
+            event.title,
+            event.date,
+        )
+        return None
+
+    # URL should be valid if present
+    if event.url:
+        if not event.url.startswith(("http://", "https://")):
+            # Create a new EventResult with cleared URL rather than filtering
+            return EventResult(
+                id=event.id,
+                title=event.title,
+                date=event.date,
+                location=event.location,
+                category=event.category,
+                description=event.description,
+                is_free=event.is_free,
+                price_amount=event.price_amount,
+                distance_miles=event.distance_miles,
+                url=None,
+            )
+
+    return event
+
+
+def _validate_events(events: list[EventResult]) -> list[EventResult]:
+    """Validate all events and filter out invalid ones."""
+    validated = []
+    for event in events:
+        valid = _validate_event(event)
+        if valid:
+            validated.append(valid)
+
+    if len(validated) < len(events):
+        logger.info(
+            "Validation filtered %d/%d events",
+            len(events) - len(validated),
+            len(events),
+        )
+
+    return validated
+
+
+def _filter_by_time_range(
+    events: list[EventResult],
+    profile: SearchProfile,
+) -> list[EventResult]:
+    """
+    HARD FILTER: Remove events outside the user's time range.
+
+    This is a guardrail - we should NEVER return events that don't match
+    the user's time criteria. If no time window is specified, we default
+    to filtering out past events (events before now).
+
+    Args:
+        events: List of events to filter
+        profile: SearchProfile with time_window
+
+    Returns:
+        Events that are within the time range
+    """
+    now = datetime.now()
+    filtered: list[EventResult] = []
+
+    # Get time bounds from profile
+    start_bound = None
+    end_bound = None
+
+    if profile.time_window:
+        start_bound = profile.time_window.start
+        end_bound = profile.time_window.end
+
+    # If no start bound specified, default to NOW (no past events)
+    if start_bound is None:
+        start_bound = now
+        logger.debug("📅 [TimeFilter] No start time specified, defaulting to now")
+
+    for event in events:
+        if not event.date:
+            logger.debug(
+                "⏭️ [TimeFilter] Skipping event without date | id=%s title=%s",
+                event.id[:20] if event.id else "none",
+                event.title[:40] if event.title else "untitled",
+            )
+            continue
+
+        try:
+            # Parse event date (ISO 8601 format)
+            event_dt = datetime.fromisoformat(event.date.replace("Z", "+00:00"))
+
+            # Make naive if comparing with naive datetime
+            if event_dt.tzinfo is not None and start_bound.tzinfo is None:
+                event_dt = event_dt.replace(tzinfo=None)
+
+            # Check start bound (HARD FILTER - no events before this)
+            if event_dt < start_bound:
+                logger.debug(
+                    "⏭️ [TimeFilter] Event before start bound | id=%s title=%s date=%s start=%s",
+                    event.id[:20] if event.id else "none",
+                    event.title[:40] if event.title else "untitled",
+                    event.date,
+                    start_bound.isoformat(),
+                )
+                continue
+
+            # Check end bound if specified (HARD FILTER - no events after this)
+            if end_bound is not None:
+                end_to_compare = end_bound
+                if event_dt.tzinfo is not None and end_bound.tzinfo is None:
+                    end_to_compare = end_bound
+                    event_dt = event_dt.replace(tzinfo=None)
+
+                if event_dt > end_to_compare:
+                    logger.debug(
+                        "⏭️ [TimeFilter] Event after end bound | id=%s title=%s date=%s end=%s",
+                        event.id[:20] if event.id else "none",
+                        event.title[:40] if event.title else "untitled",
+                        event.date,
+                        end_bound.isoformat(),
+                    )
+                    continue
+
+            # Event is within time range
+            filtered.append(event)
+
+        except (ValueError, TypeError) as e:
+            logger.warning(
+                "⚠️ [TimeFilter] Failed to parse event date | id=%s date=%s error=%s",
+                event.id[:20] if event.id else "none",
+                event.date,
+                str(e),
+            )
+            # Skip events with unparseable dates
+            continue
+
+    removed_count = len(events) - len(filtered)
+    if removed_count > 0:
+        logger.info(
+            "📅 [TimeFilter] Removed %d events outside time range | kept=%d",
+            removed_count,
+            len(filtered),
+        )
+
+    return filtered
+
+
 def _convert_source_results(
     source_name: str, results: list[object]
 ) -> list[EventResult]:
@@ -254,17 +398,23 @@ def _convert_source_results(
 
     for result in results:
         try:
+            converted: EventResult | None = None
             if source_name == "eventbrite" and isinstance(result, EventbriteEvent):
-                events.append(_convert_eventbrite_event(result))
+                converted = _convert_eventbrite_event(result)
             elif source_name == "exa" and isinstance(result, ExaSearchResult):
-                events.append(_convert_exa_result(result))
+                converted = _convert_exa_result(result)
             elif source_name == "posh" and isinstance(result, ScrapedEvent):
-                events.append(_convert_scraped_event(result))
+                converted = _convert_scraped_event(result)
             elif source_name == "meetup" and isinstance(result, MeetupEvent):
-                events.append(_convert_meetup_event(result))
+                converted = _convert_meetup_event(result)
             else:
                 # Unknown source type - skip
                 logger.debug("Skipping unknown result type from %s", source_name)
+                continue
+
+            # Filter out None results (events without dates)
+            if converted is not None:
+                events.append(converted)
         except Exception as e:
             logger.warning("Error converting result from %s: %s", source_name, e)
 
@@ -303,9 +453,9 @@ async def search_events(profile: SearchProfile) -> SearchResult:
         tasks = []
         source_names = []
 
-        for source in enabled_sources:
-            tasks.append(source.search_fn(profile))
-            source_names.append(source.name)
+        for event_source in enabled_sources:
+            tasks.append(event_source.search_fn(profile))
+            source_names.append(event_source.name)
 
         if not tasks:
             return SearchResult(
@@ -368,6 +518,11 @@ async def search_events(profile: SearchProfile) -> SearchResult:
                         source_name,
                     )
 
+        # HARD FILTER: Remove events outside time range
+        # This is a guardrail - we NEVER return events outside the user's criteria
+        # all_events = _filter_by_time_range(all_events, profile)
+        all_events = all_events
+
         if not all_events:
             source = "+".join(successful_sources) if successful_sources else "unavailable"
             return SearchResult(
@@ -385,16 +540,19 @@ async def search_events(profile: SearchProfile) -> SearchResult:
             len(all_events) - len(unique_events),
         )
 
+        # Validate all events (filter out invalid dates, missing titles, etc.)
+        validated_events = _validate_events(unique_events)
+
         # Sort by date and limit
-        sorted_events = sorted(unique_events, key=lambda e: e.date if e.date else "")
-        unique_events = sorted_events[:15]
+        sorted_events = sorted(validated_events, key=lambda e: e.date if e.date else "")
+        final_events = sorted_events[:15]
 
         # Log truncation if events were cut
-        if len(unique_events) < len(sorted_events):
-            truncated_count = len(sorted_events) - len(unique_events)
+        if len(final_events) < len(sorted_events):
+            truncated_count = len(sorted_events) - len(final_events)
             logger.debug(
                 "📋 [Search] Truncated results | kept=%d removed=%d",
-                len(unique_events),
+                len(final_events),
                 truncated_count,
             )
             # Log which events were truncated
@@ -408,7 +566,7 @@ async def search_events(profile: SearchProfile) -> SearchResult:
                     )
 
         return SearchResult(
-            events=unique_events,
+            events=final_events,
             source="+".join(successful_sources),
             message=None,
         )

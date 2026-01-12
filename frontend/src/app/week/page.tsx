@@ -35,6 +35,16 @@ export default function WeekPage() {
 					},
 				);
 				setEvents(loadedEvents);
+
+				// Auto-navigate to the week containing the first event
+				if (loadedEvents.length > 0) {
+					const firstEventDate = loadedEvents.reduce(
+						(earliest: Date, event: CalendarEvent) =>
+							event.startTime < earliest ? event.startTime : earliest,
+						loadedEvents[0].startTime,
+					);
+					setWeekStart(getWeekStart(firstEventDate));
+				}
 			} catch (error) {
 				console.error("Failed to parse stored events:", error);
 			}

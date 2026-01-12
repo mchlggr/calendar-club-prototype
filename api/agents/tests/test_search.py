@@ -9,14 +9,18 @@ from unittest.mock import patch
 import pytest
 
 from api.agents.search import (
-    EventResult,
-    RefinementInput,
-    SearchResult,
     refine_results,
     search_events,
 )
 from api.config import get_settings
-from api.models import EventFeedback, Rating, SearchProfile
+from api.models import (
+    EventFeedback,
+    EventResult,
+    Rating,
+    RefinementInput,
+    SearchProfile,
+    SearchResult,
+)
 from api.services.event_cache import CachedEvent, EventCacheService
 
 

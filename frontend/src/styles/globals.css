@@ -577,14 +577,16 @@
   }
 
   /* Calendar day column states */
-  .weekend-column {
-    background-color: color-mix(in oklab, var(--color-accent-yellow) 12%, white);
+  .weekend-dim {
+    /* Dim weekends but allow grid to show through */
+    opacity: 0.6;
   }
 
-  .today-column {
+  .today-highlight {
+    /* Highlight current day with outline only (no solid background) */
     outline: 2px solid var(--color-accent-orange);
     outline-offset: -2px;
-    background-color: color-mix(in oklab, var(--color-accent-yellow) 8%, white);
+    opacity: 1; /* Override weekend dimming if today is a weekend */
   }
 
   .density-high {

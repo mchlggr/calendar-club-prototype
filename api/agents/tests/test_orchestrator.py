@@ -8,7 +8,7 @@ from api.agents.orchestrator import (
     SimilarResult,
     orchestrator_agent,
 )
-from api.agents.search import EventResult
+from api.models import EventResult
 
 
 class TestOrchestratorAgent:
@@ -51,7 +51,8 @@ class TestOrchestratorPrompt:
     def test_prompt_includes_grounding_rules(self):
         """Prompt should include grounding rules."""
         assert "CRITICAL RULES" in ORCHESTRATOR_INSTRUCTIONS_TEMPLATE
-        assert "Grounded" in ORCHESTRATOR_INSTRUCTIONS_TEMPLATE
+        assert "DO NOT List Events" in ORCHESTRATOR_INSTRUCTIONS_TEMPLATE
+        assert "No Fabrication" in ORCHESTRATOR_INSTRUCTIONS_TEMPLATE
 
     def test_prompt_includes_response_format(self):
         """Prompt should describe response format."""

@@ -38,6 +38,89 @@ class ScrapedEvent(BaseModel):
     raw_data: dict[str, Any] | None = None
 
 
+# Unified extraction schema for all Firecrawl extractors.
+# Field descriptions guide Firecrawl's LLM for accurate extraction.
+BASE_EVENT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "title": {
+            "type": "string",
+            "description": "Event title - the main headline or name of the event",
+        },
+        "description": {
+            "type": ["string", "null"],
+            "description": (
+                "Event description or summary. First 1000 characters if very long. "
+                "Return null if no description found."
+            ),
+        },
+        "start_date": {
+            "type": "string",
+            "description": (
+                "Event start date in format 'Month Day, Year' (e.g., 'January 15, 2026'). "
+                "MUST include the full year - infer from context if not displayed on page. "
+                "Never return relative dates like 'tomorrow' or 'next week'."
+            ),
+        },
+        "start_time": {
+            "type": ["string", "null"],
+            "description": (
+                "Event start time with AM/PM (e.g., '7:00 PM', '10:30 AM'). "
+                "Include timezone abbreviation if shown on page (e.g., 'EST', 'PT'). "
+                "Return null if time not specified."
+            ),
+        },
+        "end_time": {
+            "type": ["string", "null"],
+            "description": (
+                "Event end time with AM/PM. Same format as start_time. "
+                "Return null if not specified."
+            ),
+        },
+        "venue_name": {
+            "type": ["string", "null"],
+            "description": (
+                "Venue or location name. Return 'Online' for virtual/remote events. "
+                "Return null if not specified or marked as TBA."
+            ),
+        },
+        "venue_address": {
+            "type": ["string", "null"],
+            "description": (
+                "Full street address including city, state/region, and zip/postal code "
+                "if available. Return null for online events or if address not disclosed."
+            ),
+        },
+        "price": {
+            "type": "string",
+            "description": (
+                "Entry/ticket price. Return 'Free' if: event is free, RSVP-only, "
+                "donation-based, or no price is shown. For paid events return price "
+                "with currency symbol (e.g., '$25'). For price ranges use '$10-50' format. "
+                "If multiple ticket tiers, return the lowest price."
+            ),
+        },
+        "image_url": {
+            "type": ["string", "null"],
+            "description": (
+                "URL of the main event banner or cover image. Must be a full URL "
+                "starting with https://. Do NOT return: logos, profile pictures, "
+                "sponsor images, or advertisement banners. Return null if no "
+                "event-specific image found."
+            ),
+        },
+        "organizer": {
+            "type": ["string", "null"],
+            "description": (
+                "Name of the event organizer, host, or hosting organization. "
+                "Return null if not specified."
+            ),
+        },
+    },
+    "required": ["title", "start_date"],
+}
+
+
 class FirecrawlClient:
     """
     Async client wrapper for Firecrawl SDK.
@@ -147,7 +230,7 @@ class BaseExtractor(ABC):
 
     SOURCE_NAME: str = "unknown"
     BASE_URL: str = ""
-    EVENT_SCHEMA: dict[str, Any] = {}
+    EVENT_SCHEMA: dict[str, Any] = BASE_EVENT_SCHEMA
     DEFAULT_CATEGORY: str = "community"
 
     def __init__(self, client: FirecrawlClient | None = None):
@@ -170,6 +253,83 @@ class BaseExtractor(ABC):
     ) -> ScrapedEvent | None:
         """Parse extracted data into ScrapedEvent. Must be implemented by subclass."""
         pass
+
+    def _parse_datetime_from_schema(
+        self,
+        start_date: str | None,
+        start_time: str | None,
+        end_time: str | None,
+    ) -> tuple[datetime | None, datetime | None]:
+        """
+        Parse date/time strings from BASE_EVENT_SCHEMA into datetime objects.
+
+        This method handles the standardized format where:
+        - start_date: 'Month Day, Year' (e.g., 'January 15, 2026')
+        - start_time: 'H:MM AM/PM [TZ]' (e.g., '7:00 PM EST')
+        - end_time: Same format as start_time
+        """
+        if not start_date:
+            return None, None
+
+        try:
+            import dateparser
+            from datetime import timedelta
+
+            # Combine date and start time
+            combined = start_date
+            if start_time:
+                # Remove timezone abbreviation for parsing (dateparser handles it)
+                combined = f"{start_date} {start_time}"
+
+            start_dt = dateparser.parse(
+                combined,
+                settings={"PREFER_DATES_FROM": "future"},
+            )
+
+            # Parse end time if provided
+            end_dt = None
+            if end_time and start_dt:
+                end_combined = f"{start_date} {end_time}"
+                end_dt = dateparser.parse(
+                    end_combined,
+                    settings={"PREFER_DATES_FROM": "future"},
+                )
+                # Handle overnight events (end time before start time)
+                if end_dt and start_dt and end_dt < start_dt:
+                    end_dt = end_dt + timedelta(days=1)
+
+            return start_dt, end_dt
+
+        except Exception as e:
+            logger.warning(
+                "Failed to parse datetime: date=%s start=%s end=%s error=%s",
+                start_date,
+                start_time,
+                end_time,
+                e,
+            )
+            return None, None
+
+    def _parse_price_from_schema(self, price_str: str | None) -> tuple[bool, int | None]:
+        """
+        Parse price string from BASE_EVENT_SCHEMA into (is_free, price_cents).
+
+        Handles: 'Free', '$25', '$10-50', '$15+'
+        """
+        if not price_str:
+            return True, None
+
+        price_lower = price_str.lower().strip()
+        if price_lower in ("free", "no cover", "complimentary", "donation", "rsvp", ""):
+            return True, None
+
+        # Extract first number from price string
+        match = re.search(r"\$?(\d+(?:\.\d{2})?)", price_str)
+        if match:
+            price = float(match.group(1))
+            return False, int(price * 100)  # Convert to cents
+
+        return True, None
 
     async def extract_event(self, url: str) -> ScrapedEvent | None:
         """
@@ -257,22 +417,7 @@ class PoshExtractor(BaseExtractor):
     SOURCE_NAME = "posh"
     BASE_URL = "https://posh.vip"
     DEFAULT_CATEGORY = "nightlife"
-
-    EVENT_SCHEMA = {
-        "type": "object",
-        "properties": {
-            "title": {"type": "string", "description": "Event title"},
-            "description": {"type": "string", "description": "Event description"},
-            "date": {"type": "string", "description": "Event date (e.g., 'Saturday, Jan 15')"},
-            "time": {"type": "string", "description": "Event time (e.g., '10 PM - 2 AM')"},
-            "venue_name": {"type": "string", "description": "Venue name"},
-            "venue_address": {"type": "string", "description": "Venue address"},
-            "price": {"type": "string", "description": "Ticket price (e.g., 'Free', '$20')"},
-            "image_url": {"type": "string", "description": "Event image URL"},
-            "organizer": {"type": "string", "description": "Event organizer name"},
-        },
-        "required": ["title"],
-    }
+    # Uses BASE_EVENT_SCHEMA from parent class
 
     def _extract_event_id(self, url: str) -> str:
         """Extract event ID from Posh URL."""
@@ -282,77 +427,24 @@ class PoshExtractor(BaseExtractor):
             return path[2:]
         return path or url
 
-    def _parse_datetime(
-        self, date_str: str | None, time_str: str | None
-    ) -> tuple[datetime | None, datetime | None]:
-        """Parse Posh date/time strings into datetime objects."""
-        if not date_str:
-            return None, None
-
-        try:
-            import dateparser
-
-            combined = date_str
-            if time_str:
-                time_parts = re.split(r"\s*[-–to]\s*", time_str, maxsplit=1)
-                start_time = time_parts[0].strip()
-                combined = f"{date_str} {start_time}"
-
-            start_dt = dateparser.parse(
-                combined,
-                settings={"PREFER_DATES_FROM": "future"},
-            )
-
-            end_dt = None
-            if time_str and ("-" in time_str or "–" in time_str or " to " in time_str.lower()):
-                time_parts = re.split(r"\s*[-–]\s*|\s+to\s+", time_str, flags=re.IGNORECASE)
-                if len(time_parts) > 1:
-                    end_time = time_parts[1].strip()
-                    end_combined = f"{date_str} {end_time}"
-                    end_dt = dateparser.parse(
-                        end_combined,
-                        settings={"PREFER_DATES_FROM": "future"},
-                    )
-
-            return start_dt, end_dt
-
-        except Exception as e:
-            logger.warning("Failed to parse datetime: %s %s - %s", date_str, time_str, e)
-            return None, None
-
-    def _parse_price(self, price_str: str | None) -> tuple[bool, int | None]:
-        """Parse price string into is_free and price_amount."""
-        if not price_str:
-            return True, None
-
-        price_lower = price_str.lower().strip()
-        if price_lower in ("free", "no cover", "complimentary", ""):
-            return True, None
-
-        match = re.search(r"\$?(\d+(?:\.\d{2})?)", price_str)
-        if match:
-            price = float(match.group(1))
-            return False, int(price * 100)
-
-        return True, None
-
     def _parse_extracted_data(
         self,
         url: str,
         extracted: dict[str, Any],
     ) -> ScrapedEvent | None:
         """Parse Posh extracted data into ScrapedEvent."""
-        start_dt, end_dt = self._parse_datetime(
-            extracted.get("date"),
-            extracted.get("time"),
+        start_dt, end_dt = self._parse_datetime_from_schema(
+            extracted.get("start_date"),
+            extracted.get("start_time"),
+            extracted.get("end_time"),
         )
-        is_free, price_amount = self._parse_price(extracted.get("price"))
+        is_free, price_amount = self._parse_price_from_schema(extracted.get("price"))
 
         return ScrapedEvent(
             source=self.SOURCE_NAME,
             event_id=self._extract_event_id(url),
             title=extracted["title"],
-            description=extracted.get("description", ""),
+            description=extracted.get("description") or "",
             start_time=start_dt,
             end_time=end_dt,
             venue_name=extracted.get("venue_name"),
@@ -508,6 +600,7 @@ class LumaExtractor(BaseExtractor):
     SOURCE_NAME = "luma"
     BASE_URL = "https://lu.ma"
     DEFAULT_CATEGORY = "tech"
+    # Uses BASE_EVENT_SCHEMA from parent class
 
     # City slugs supported by Luma
     CITY_SLUGS = {
@@ -527,24 +620,6 @@ class LumaExtractor(BaseExtractor):
         "berlin": "berlin",
     }
 
-    EVENT_SCHEMA = {
-        "type": "object",
-        "properties": {
-            "title": {"type": "string", "description": "Event title"},
-            "description": {"type": "string", "description": "Event description"},
-            "start_date": {"type": "string", "description": "Start date (e.g., 'January 15, 2026')"},
-            "start_time": {"type": "string", "description": "Start time (e.g., '6:00 PM')"},
-            "end_time": {"type": "string", "description": "End time if available"},
-            "location": {"type": "string", "description": "Full venue address"},
-            "venue_name": {"type": "string", "description": "Venue name"},
-            "host_name": {"type": "string", "description": "Event host/organizer"},
-            "price": {"type": "string", "description": "Ticket price or 'Free'"},
-            "guest_count": {"type": "integer", "description": "Number of attendees"},
-            "cover_image": {"type": "string", "description": "Event cover image URL"},
-        },
-        "required": ["title"],
-    }
-
     def _extract_event_id(self, url: str) -> str:
         """Extract event ID from Luma URL."""
         parsed = urlparse(url)
@@ -558,47 +633,27 @@ class LumaExtractor(BaseExtractor):
         extracted: dict[str, Any],
     ) -> ScrapedEvent | None:
         """Parse Luma extracted data into ScrapedEvent."""
-        import dateparser
-
-        # Parse datetime
-        start_dt = None
-        end_dt = None
-        date_str = extracted.get("start_date", "")
-        time_str = extracted.get("start_time", "")
-
-        if date_str:
-            combined = f"{date_str} {time_str}".strip()
-            start_dt = dateparser.parse(
-                combined,
-                settings={"PREFER_DATES_FROM": "future"},
-            )
-
-        # Parse price
-        price_str = extracted.get("price", "")
-        is_free = True
-        price_amount = None
-        if price_str:
-            price_lower = price_str.lower()
-            if price_lower not in ("free", ""):
-                is_free = False
-                match = re.search(r"\$?(\d+(?:\.\d{2})?)", price_str)
-                if match:
-                    price_amount = int(float(match.group(1)) * 100)
+        start_dt, end_dt = self._parse_datetime_from_schema(
+            extracted.get("start_date"),
+            extracted.get("start_time"),
+            extracted.get("end_time"),
+        )
+        is_free, price_amount = self._parse_price_from_schema(extracted.get("price"))
 
         return ScrapedEvent(
             source=self.SOURCE_NAME,
             event_id=self._extract_event_id(url),
             title=extracted.get("title", "Untitled"),
-            description=extracted.get("description", ""),
+            description=extracted.get("description") or "",
             start_time=start_dt,
             end_time=end_dt,
             venue_name=extracted.get("venue_name"),
-            venue_address=extracted.get("location"),
+            venue_address=extracted.get("venue_address"),
             category=self.DEFAULT_CATEGORY,
             is_free=is_free,
             price_amount=price_amount,
             url=url,
-            logo_url=extracted.get("cover_image"),
+            logo_url=extracted.get("image_url"),
             raw_data=extracted,
         )
 
@@ -757,6 +812,7 @@ class PartifulExtractor(BaseExtractor):
     SOURCE_NAME = "partiful"
     BASE_URL = "https://partiful.com"
     DEFAULT_CATEGORY = "social"
+    # Uses BASE_EVENT_SCHEMA from parent class
 
     # City codes supported by Partiful
     CITY_CODES = {
@@ -768,22 +824,6 @@ class PartifulExtractor(BaseExtractor):
         "chicago": "chi",
         "miami": "mia",
         "london": "lon",
-    }
-
-    EVENT_SCHEMA = {
-        "type": "object",
-        "properties": {
-            "title": {"type": "string", "description": "Event title"},
-            "description": {"type": "string", "description": "Event description"},
-            "date": {"type": "string", "description": "Event date (e.g., 'Sunday, January 25, 2026')"},
-            "time": {"type": "string", "description": "Event time (e.g., '9:30 AM PT')"},
-            "location": {"type": "string", "description": "Full venue address"},
-            "host_name": {"type": "string", "description": "Event host name"},
-            "guest_count": {"type": "string", "description": "Number of guests (e.g., '45 going')"},
-            "category": {"type": "string", "description": "Event category"},
-            "cover_image": {"type": "string", "description": "Event banner image URL"},
-        },
-        "required": ["title"],
     }
 
     def _extract_event_id(self, url: str) -> str:
@@ -801,43 +841,27 @@ class PartifulExtractor(BaseExtractor):
         extracted: dict[str, Any],
     ) -> ScrapedEvent | None:
         """Parse Partiful extracted data into ScrapedEvent."""
-        import dateparser
-
-        # Parse datetime
-        start_dt = None
-        date_str = extracted.get("date", "")
-        time_str = extracted.get("time", "")
-
-        if date_str:
-            combined = f"{date_str} {time_str}".strip()
-            start_dt = dateparser.parse(
-                combined,
-                settings={"PREFER_DATES_FROM": "future"},
-            )
-
-        # Partiful events are generally free (RSVP-based)
-        is_free = True
-        price_amount = None
-
-        # Map category
-        category = extracted.get("category", "").lower()
-        if not category or category == "community":
-            category = self.DEFAULT_CATEGORY
+        start_dt, end_dt = self._parse_datetime_from_schema(
+            extracted.get("start_date"),
+            extracted.get("start_time"),
+            extracted.get("end_time"),
+        )
+        is_free, price_amount = self._parse_price_from_schema(extracted.get("price"))
 
         return ScrapedEvent(
             source=self.SOURCE_NAME,
             event_id=self._extract_event_id(url),
             title=extracted.get("title", "Untitled"),
-            description=extracted.get("description", ""),
+            description=extracted.get("description") or "",
             start_time=start_dt,
-            end_time=None,
-            venue_name=None,  # Partiful combines venue into location
-            venue_address=extracted.get("location"),
-            category=category,
+            end_time=end_dt,
+            venue_name=extracted.get("venue_name"),
+            venue_address=extracted.get("venue_address"),
+            category=self.DEFAULT_CATEGORY,
             is_free=is_free,
             price_amount=price_amount,
             url=url,
-            logo_url=extracted.get("cover_image"),
+            logo_url=extracted.get("image_url"),
             raw_data=extracted,
         )
 
@@ -977,22 +1001,7 @@ class MeetupExtractor(BaseExtractor):
     SOURCE_NAME = "meetup"
     BASE_URL = "https://www.meetup.com"
     DEFAULT_CATEGORY = "community"
-
-    EVENT_SCHEMA = {
-        "type": "object",
-        "properties": {
-            "title": {"type": "string", "description": "Event title"},
-            "description": {"type": "string", "description": "Event description"},
-            "date_time": {"type": "string", "description": "Date and time"},
-            "venue_name": {"type": "string", "description": "Venue name"},
-            "venue_address": {"type": "string", "description": "Venue address"},
-            "group_name": {"type": "string", "description": "Meetup group name"},
-            "attendee_count": {"type": "string", "description": "Number of attendees"},
-            "price": {"type": "string", "description": "Event price"},
-            "event_type": {"type": "string", "description": "Online or in-person"},
-        },
-        "required": ["title"],
-    }
+    # Uses BASE_EVENT_SCHEMA from parent class
 
     def _extract_event_id(self, url: str) -> str:
         """Extract event ID from Meetup URL."""
@@ -1011,44 +1020,33 @@ class MeetupExtractor(BaseExtractor):
         extracted: dict[str, Any],
     ) -> ScrapedEvent | None:
         """Parse Meetup extracted data into ScrapedEvent."""
-        import dateparser
+        start_dt, end_dt = self._parse_datetime_from_schema(
+            extracted.get("start_date"),
+            extracted.get("start_time"),
+            extracted.get("end_time"),
+        )
 
-        start_dt = None
-        date_str = extracted.get("date_time", "")
-        if date_str:
-            start_dt = dateparser.parse(
-                date_str,
-                settings={"PREFER_DATES_FROM": "future"},
-            )
+        # Check if online - skip online events
+        venue_name = extracted.get("venue_name", "")
+        if venue_name and venue_name.lower() == "online":
+            return None
 
-        # Check if online
-        event_type = extracted.get("event_type", "").lower()
-        if "online" in event_type:
-            return None  # Skip online events
-
-        # Parse price
-        price_str = extracted.get("price", "")
-        is_free = not price_str or "free" in price_str.lower()
-        price_amount = None
-        if not is_free:
-            match = re.search(r"\$?(\d+(?:\.\d{2})?)", price_str)
-            if match:
-                price_amount = int(float(match.group(1)) * 100)
+        is_free, price_amount = self._parse_price_from_schema(extracted.get("price"))
 
         return ScrapedEvent(
             source=self.SOURCE_NAME,
             event_id=self._extract_event_id(url),
             title=extracted.get("title", "Untitled"),
-            description=extracted.get("description", ""),
+            description=extracted.get("description") or "",
             start_time=start_dt,
-            end_time=None,
-            venue_name=extracted.get("venue_name"),
+            end_time=end_dt,
+            venue_name=venue_name or None,
             venue_address=extracted.get("venue_address"),
             category=self.DEFAULT_CATEGORY,
             is_free=is_free,
             price_amount=price_amount,
             url=url,
-            logo_url=None,
+            logo_url=extracted.get("image_url"),
             raw_data=extracted,
         )
 
@@ -1173,21 +1171,7 @@ class FacebookExtractor(BaseExtractor):
     SOURCE_NAME = "facebook"
     BASE_URL = "https://www.facebook.com"
     DEFAULT_CATEGORY = "community"
-
-    EVENT_SCHEMA = {
-        "type": "object",
-        "properties": {
-            "title": {"type": "string", "description": "Event name"},
-            "description": {"type": "string", "description": "Event description"},
-            "date": {"type": "string", "description": "Event date"},
-            "time": {"type": "string", "description": "Event time"},
-            "location": {"type": "string", "description": "Venue/location"},
-            "host": {"type": "string", "description": "Event host/organizer"},
-            "interested_count": {"type": "string", "description": "People interested"},
-            "going_count": {"type": "string", "description": "People going"},
-        },
-        "required": ["title"],
-    }
+    # Uses BASE_EVENT_SCHEMA from parent class
 
     def _extract_event_id(self, url: str) -> str:
         """Extract event ID from Facebook URL."""
@@ -1205,32 +1189,27 @@ class FacebookExtractor(BaseExtractor):
         extracted: dict[str, Any],
     ) -> ScrapedEvent | None:
         """Parse Facebook extracted data into ScrapedEvent."""
-        import dateparser
-
-        start_dt = None
-        date_str = extracted.get("date", "")
-        time_str = extracted.get("time", "")
-        if date_str:
-            combined = f"{date_str} {time_str}".strip()
-            start_dt = dateparser.parse(
-                combined,
-                settings={"PREFER_DATES_FROM": "future"},
-            )
+        start_dt, end_dt = self._parse_datetime_from_schema(
+            extracted.get("start_date"),
+            extracted.get("start_time"),
+            extracted.get("end_time"),
+        )
+        is_free, price_amount = self._parse_price_from_schema(extracted.get("price"))
 
         return ScrapedEvent(
             source=self.SOURCE_NAME,
             event_id=self._extract_event_id(url),
             title=extracted.get("title", "Untitled"),
-            description=extracted.get("description", ""),
+            description=extracted.get("description") or "",
             start_time=start_dt,
-            end_time=None,
-            venue_name=None,
-            venue_address=extracted.get("location"),
+            end_time=end_dt,
+            venue_name=extracted.get("venue_name"),
+            venue_address=extracted.get("venue_address"),
             category=self.DEFAULT_CATEGORY,
-            is_free=True,  # Facebook doesn't show pricing in search
-            price_amount=None,
+            is_free=is_free,
+            price_amount=price_amount,
             url=url,
-            logo_url=None,
+            logo_url=extracted.get("image_url"),
             raw_data=extracted,
         )
 
@@ -1359,21 +1338,7 @@ class RiverExtractor(BaseExtractor):
     SOURCE_NAME = "river"
     BASE_URL = "https://app.getriver.io"
     DEFAULT_CATEGORY = "community"
-
-    EVENT_SCHEMA = {
-        "type": "object",
-        "properties": {
-            "title": {"type": "string", "description": "Event title"},
-            "description": {"type": "string", "description": "Event description"},
-            "date": {"type": "string", "description": "Event date"},
-            "time": {"type": "string", "description": "Event time"},
-            "location": {"type": "string", "description": "Full location/venue"},
-            "city": {"type": "string", "description": "City name"},
-            "community_name": {"type": "string", "description": "River community name"},
-            "host_name": {"type": "string", "description": "Event host"},
-        },
-        "required": ["title"],
-    }
+    # Uses BASE_EVENT_SCHEMA from parent class
 
     def _extract_event_id(self, url: str) -> str:
         """Extract event ID from River URL."""
@@ -1389,32 +1354,27 @@ class RiverExtractor(BaseExtractor):
         extracted: dict[str, Any],
     ) -> ScrapedEvent | None:
         """Parse River extracted data into ScrapedEvent."""
-        import dateparser
-
-        start_dt = None
-        date_str = extracted.get("date", "")
-        time_str = extracted.get("time", "")
-        if date_str:
-            combined = f"{date_str} {time_str}".strip()
-            start_dt = dateparser.parse(
-                combined,
-                settings={"PREFER_DATES_FROM": "future"},
-            )
+        start_dt, end_dt = self._parse_datetime_from_schema(
+            extracted.get("start_date"),
+            extracted.get("start_time"),
+            extracted.get("end_time"),
+        )
+        is_free, price_amount = self._parse_price_from_schema(extracted.get("price"))
 
         return ScrapedEvent(
             source=self.SOURCE_NAME,
             event_id=self._extract_event_id(url),
             title=extracted.get("title", "Untitled"),
-            description=extracted.get("description", ""),
+            description=extracted.get("description") or "",
             start_time=start_dt,
-            end_time=None,
-            venue_name=extracted.get("community_name"),
-            venue_address=extracted.get("location"),
+            end_time=end_dt,
+            venue_name=extracted.get("venue_name") or extracted.get("organizer"),
+            venue_address=extracted.get("venue_address"),
             category=self.DEFAULT_CATEGORY,
-            is_free=True,  # River events are typically free
-            price_amount=None,
+            is_free=is_free,
+            price_amount=price_amount,
             url=url,
-            logo_url=None,
+            logo_url=extracted.get("image_url"),
             raw_data=extracted,
         )
 

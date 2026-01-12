@@ -1,6 +1,7 @@
 "use client";
 
 import { Download } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import type { CalendarEvent } from "@/components/calendar";
 import { api } from "@/lib/api";
@@ -150,13 +151,13 @@ export function ResultsPreview({
 
 			{/* Action buttons */}
 			<div className="flex flex-wrap gap-3">
-				<button
-					type="button"
+				<Link
+					href="/week"
 					onClick={onViewWeek}
 					className="btn-brutal cc-btn-primary"
 				>
 					View full week
-				</button>
+				</Link>
 				<button
 					type="button"
 					onClick={handleExportAll}

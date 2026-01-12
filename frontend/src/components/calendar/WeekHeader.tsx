@@ -44,7 +44,7 @@ export function WeekHeader({ weekStart, className }: WeekHeaderProps) {
 						key={date.toISOString()}
 						className={cn(
 							"flex flex-col items-center border-r-2 border-text-primary py-3 last:border-r-0",
-							weekend ? "weekend-column" : "bg-bg-white",
+							weekend && "weekend-dim",
 						)}
 					>
 						{/* Day label */}
@@ -58,7 +58,7 @@ export function WeekHeader({ weekStart, className }: WeekHeaderProps) {
 							<span
 								className={cn(
 									"cc-date-number",
-									weekend ? "text-accent-orange" : "text-text-primary",
+									isToday ? "text-accent-orange" : "text-text-primary",
 								)}
 							>
 								{date.getDate()}

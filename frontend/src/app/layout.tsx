@@ -49,8 +49,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
 	children,
+	calendar,
 }: Readonly<{
 	children: React.ReactNode;
+	calendar: React.ReactNode;
 }>) {
 	return (
 		<html lang="en">
@@ -63,6 +65,7 @@ export default function RootLayout({
 							<Header />
 							<main>{children}</main>
 							<Footer />
+							{calendar}
 						</TelemetryProvider>
 					</PostHogProvider>
 				</Suspense>

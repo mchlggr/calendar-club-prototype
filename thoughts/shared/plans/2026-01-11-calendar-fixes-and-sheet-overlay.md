@@ -167,9 +167,9 @@ def _convert_exa_result(result: ExaResult) -> EventResult | None:
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] API server starts without errors: `cd api && uv run python -c "from agents.search import search_events; print('OK')"`
-- [ ] Type checking passes: `cd api && uv run pyright`
-- [ ] Existing tests pass: `cd api && uv run pytest agents/tests/test_search.py -v`
+- [x] API server starts without errors: `cd api && uv run python -c "from agents.search import search_events; print('OK')"`
+- [x] Type checking passes: `cd api && uv run pyright`
+- [x] Existing tests pass: `cd api && uv run pytest agents/tests/test_search.py -v`
 
 #### Manual Verification:
 - [ ] Search for events → check server logs for "Skipping event without date" messages
@@ -296,9 +296,9 @@ Remove or comment out the old `.weekend-column` and `.today-column` classes.
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Frontend builds without errors: `cd frontend && npm run build`
-- [ ] Linting passes: `cd frontend && npm run lint`
-- [ ] No TypeScript errors: `cd frontend && npx tsc --noEmit`
+- [x] Frontend builds without errors: `cd frontend && npm run build`
+- [x] Linting passes: `cd frontend && npm run lint`
+- [x] No TypeScript errors: `cd frontend && npx tsc --noEmit`
 
 #### Manual Verification:
 - [ ] Grid pattern visible on ALL 7 days (including weekends)
@@ -645,10 +645,10 @@ export type { CalendarEvent, EventCategory } from "./types";
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Dependencies install: `cd frontend && npm install`
-- [ ] Frontend builds without errors: `cd frontend && npm run build`
-- [ ] Linting passes: `cd frontend && npm run lint`
-- [ ] No TypeScript errors: `cd frontend && npx tsc --noEmit`
+- [x] Dependencies install: `cd frontend && npm install`
+- [x] Frontend builds without errors: `cd frontend && npm run build`
+- [x] Linting passes: `cd frontend && npm run lint`
+- [x] No TypeScript errors: `cd frontend && npx tsc --noEmit`
 
 #### Manual Verification:
 - [ ] From homepage, click "View Week" → sheet slides up from bottom

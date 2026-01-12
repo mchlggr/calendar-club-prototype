@@ -30,6 +30,7 @@ class ExaSearchResult(BaseModel):
     author: str | None = None
     text: str | None = None
     highlights: list[str] | None = None
+    extracted_event: dict[str, Any] | None = None  # LLM-extracted event data
 
 
 class ExaWebset(BaseModel):
@@ -108,6 +109,113 @@ class ExaClient:
             highlights=getattr(result, 'highlights', None),
         )
 
+    async def _extract_event_from_text(
+        self,
+        title: str,
+        text: str | None,
+        highlights: list[str] | None,
+        url: str,
+    ) -> dict[str, Any] | None:
+        """
+        Use lightweight LLM to extract event details from search result text.
+
+        Returns dict with: title, start_date, start_time, venue_name, price, description
+        """
+        if not text and not highlights:
+            return None
+
+        # Combine text sources
+        content = ""
+        if highlights:
+            content = " ".join(highlights[:3])
+        if text and len(content) < 500:
+            content += " " + text[:500]
+
+        if len(content.strip()) < 50:
+            return None  # Not enough content to extract from
+
+        try:
+            import json
+
+            from openai import AsyncOpenAI
+
+            client = AsyncOpenAI()
+
+            response = await client.chat.completions.create(
+                model="gpt-4o-mini",  # Lightweight model for cost/speed
+                messages=[
+                    {
+                        "role": "system",
+                        "content": """Extract event details from the text. Return JSON with:
+- title: Event name
+- start_date: Date as 'Month Day, Year' (e.g., 'January 15, 2026'). MUST include year.
+- start_time: Time with AM/PM if found, else null
+- venue_name: Venue name if found, 'Online' for virtual, else null
+- price: 'Free' or '$XX' format, else null
+- description: One sentence summary
+
+If this is NOT an event page or details cannot be extracted, return {"is_event": false}.""",
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Page title: {title}\n\nContent: {content[:1000]}",
+                    },
+                ],
+                response_format={"type": "json_object"},
+                max_tokens=200,
+                temperature=0,
+            )
+
+            result = response.choices[0].message.content
+            if result:
+                data = json.loads(result)
+                if data.get("is_event") is False:
+                    return None
+                return data
+
+        except Exception as e:
+            logger.debug("Event extraction failed for %s: %s", url, e)
+
+        return None
+
+    async def _enrich_with_extraction(
+        self,
+        results: list[ExaSearchResult],
+    ) -> list[ExaSearchResult]:
+        """Enrich search results with LLM-extracted event details."""
+        import asyncio
+
+        async def extract_one(result: ExaSearchResult) -> ExaSearchResult:
+            extracted = await self._extract_event_from_text(
+                result.title,
+                result.text,
+                result.highlights,
+                result.url,
+            )
+            if extracted:
+                # Create a new result with extracted_event set
+                return ExaSearchResult(
+                    id=result.id,
+                    title=result.title,
+                    url=result.url,
+                    score=result.score,
+                    published_date=result.published_date,
+                    author=result.author,
+                    text=result.text,
+                    highlights=result.highlights,
+                    extracted_event=extracted,
+                )
+            return result
+
+        # Run extractions in parallel (batch of 5 at a time to avoid rate limits)
+        enriched = []
+        for i in range(0, len(results), 5):
+            batch = results[i : i + 5]
+            batch_results = await asyncio.gather(*[extract_one(r) for r in batch])
+            enriched.extend(batch_results)
+
+        return enriched
+
     def _sync_search(
         self,
         query: str,
@@ -153,11 +261,16 @@ class ExaClient:
         end_published_date: datetime | None = None,
         include_domains: list[str] | None = None,
         exclude_domains: list[str] | None = None,
+        extract_events: bool = False,
     ) -> list[ExaSearchResult]:
         """
         Search the web using Exa's neural search.
 
         Uses SDK wrapped in thread pool for async compatibility.
+
+        Args:
+            extract_events: If True, use LLM to extract structured event data
+                           from each result's text content
         """
         if not self.api_key:
             logger.warning("EXA_API_KEY not set, returning empty results")
@@ -165,9 +278,10 @@ class ExaClient:
 
         try:
             logger.debug(
-                "🌐 [Exa] Starting search | query=%s num_results=%d",
+                "🌐 [Exa] Starting search | query=%s num_results=%d extract=%s",
                 query[:50],
                 num_results,
+                extract_events,
             )
             start_time = time.perf_counter()
 
@@ -190,11 +304,17 @@ class ExaClient:
 
             results = [self._convert_sdk_result(r) for r in raw_results]
 
+            # Optionally extract event details from text
+            if extract_events and results:
+                results = await self._enrich_with_extraction(results)
+
             elapsed = time.perf_counter() - start_time
             if results:
+                extracted_count = sum(1 for r in results if r.extracted_event)
                 logger.debug(
-                    "✅ [Exa] Complete | results=%d duration=%.2fs",
+                    "✅ [Exa] Complete | results=%d extracted=%d duration=%.2fs",
                     len(results),
+                    extracted_count,
                     elapsed,
                 )
             else:
@@ -473,6 +593,7 @@ async def search_events_adapter(profile: Any) -> list[ExaSearchResult]:
         num_results=10,
         include_text=True,
         include_highlights=True,
+        extract_events=True,  # Enable LLM extraction for structured event data
         # No date filters - they filter page publication, not event dates
         # No domain restrictions - let Exa search broadly for events
     )

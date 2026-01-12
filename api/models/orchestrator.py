@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from pydantic import BaseModel, Field
+
+from api.models.events import EventResult
 
 
 class QuickPick(BaseModel):
@@ -24,7 +24,7 @@ class OrchestratorResponse(BaseModel):
     placeholder: str | None = Field(
         default=None, description="Placeholder text for chat input"
     )
-    events: list[Any] = Field(
+    events: list[EventResult] = Field(
         default_factory=list,
         description="Events to display (from search or refinement)",
     )

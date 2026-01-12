@@ -1,13 +1,11 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { CalendarEvent } from "@/components/calendar";
 import { DiscoveryChat } from "@/components/discovery";
 import { Hero, PaperQuote } from "@/components/layout";
 
 export default function Home() {
-	const router = useRouter();
 	const [discoveredEvents, setDiscoveredEvents] = useState<CalendarEvent[]>([]);
 
 	const handleSearch = (_query: unknown) => {
@@ -18,14 +16,14 @@ export default function Home() {
 		setDiscoveredEvents(events);
 	};
 
-	const handleViewWeek = () => {
+	const prepareViewWeek = () => {
+		// Store events before navigation (Link handles the actual navigation)
 		if (discoveredEvents.length > 0) {
 			sessionStorage.setItem(
 				"discoveredEvents",
 				JSON.stringify(discoveredEvents),
 			);
 		}
-		router.push("/week");
 	};
 
 	return (
@@ -41,7 +39,7 @@ export default function Home() {
 				<DiscoveryChat
 					onSearch={handleSearch}
 					onResultsReady={handleResultsReady}
-					onViewWeek={handleViewWeek}
+					onViewWeek={prepareViewWeek}
 				/>
 			</div>
 		</div>

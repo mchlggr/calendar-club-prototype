@@ -24,8 +24,9 @@ export function DayColumn({
 		<div
 			className={cn(
 				"flex min-h-[220px] flex-col gap-2 border-r-2 border-text-primary p-3 last:border-r-0",
-				isWeekend ? "weekend-column" : "bg-transparent",
-				isToday && "today-column",
+				// Grid shows through on all days (no solid backgrounds)
+				isWeekend && "weekend-dim",
+				isToday && "today-highlight",
 				hasHighDensity && "density-high",
 				className,
 			)}

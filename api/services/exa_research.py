@@ -28,6 +28,60 @@ class ExaResearchResult(BaseModel):
     summary: str | None = None
 
 
+# Schema for structured event extraction via Exa Research
+EVENT_RESEARCH_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "events": {
+            "type": "array",
+            "description": "List of events found",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Event title",
+                    },
+                    "start_date": {
+                        "type": "string",
+                        "description": (
+                            "Date in 'Month Day, Year' format "
+                            "(e.g., 'January 15, 2026'). MUST include year."
+                        ),
+                    },
+                    "start_time": {
+                        "type": ["string", "null"],
+                        "description": "Time with AM/PM (e.g., '7:00 PM')",
+                    },
+                    "venue_name": {
+                        "type": ["string", "null"],
+                        "description": "Venue name or 'Online' for virtual events",
+                    },
+                    "venue_address": {
+                        "type": ["string", "null"],
+                        "description": "Full address with city, state",
+                    },
+                    "price": {
+                        "type": "string",
+                        "description": "'Free' or price like '$25'",
+                    },
+                    "url": {
+                        "type": "string",
+                        "description": "Event page URL",
+                    },
+                    "description": {
+                        "type": ["string", "null"],
+                        "description": "Brief event description",
+                    },
+                },
+                "required": ["title", "start_date", "url"],
+            },
+        }
+    },
+    "required": ["events"],
+}
+
+
 class ExaResearchClient:
     """
     Client for Exa Research API.
@@ -162,11 +216,24 @@ async def research_events_adapter(profile: Any) -> list[ExaSearchResult]:
     """
     client = get_exa_research_client()
 
-    # Build research query
+    # Build research query with explicit extraction instructions
     query_parts = [
         "Find upcoming events in Columbus, Ohio",
-        "Include dates, times, venues, and descriptions",
+        (
+            "For each event, extract: title, date (with full year), "
+            "time, venue, address, price, URL, and description"
+        ),
     ]
+
+    if hasattr(profile, "time_window") and profile.time_window:
+        if profile.time_window.start:
+            query_parts.append(
+                f"Events starting from {profile.time_window.start.strftime('%B %d, %Y')}"
+            )
+        if profile.time_window.end:
+            query_parts.append(
+                f"Events before {profile.time_window.end.strftime('%B %d, %Y')}"
+            )
 
     if hasattr(profile, "categories") and profile.categories:
         query_parts.append(f"Focus on: {', '.join(profile.categories)}")
@@ -176,8 +243,11 @@ async def research_events_adapter(profile: Any) -> list[ExaSearchResult]:
 
     query = ". ".join(query_parts)
 
-    # Create research task
-    task_id = await client.create_research_task(query)
+    # Create research task WITH schema for structured output
+    task_id = await client.create_research_task(
+        query,
+        output_schema=EVENT_RESEARCH_SCHEMA,
+    )
     if not task_id:
         return []
 
