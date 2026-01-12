@@ -169,9 +169,28 @@ class ExaResearchClient:
 
             results = None
 
-            # SDK may return 'events' (from output_schema) or 'results'
-            raw_events = getattr(result, 'events', None) or getattr(result, 'results', None)
-            if raw_events:
+            # SDK returns nested structure: result.output.events
+            # First get the output object, then get events from it
+            output_obj = getattr(result, 'output', None)
+            raw_events = None
+
+            if output_obj is not None:
+                # output_obj is a ResearchOutput with an 'events' attribute
+                if hasattr(output_obj, 'events'):
+                    raw_events = output_obj.events
+                elif isinstance(output_obj, dict):
+                    raw_events = output_obj.get('events')
+                logger.debug("📦 [Exa Research] Output object | type=%s events=%s", type(output_obj).__name__, type(raw_events).__name__ if raw_events else None)
+
+            # Fallback: check direct attributes
+            if not raw_events:
+                raw_events = getattr(result, 'events', None) or getattr(result, 'results', None)
+
+            # Log raw response when completed but no events found
+            if status in ('completed', 'complete', 'success', 'done') and not raw_events:
+                logger.warning("🔍 [Exa Research] Completed but no events | output_obj=%s", output_obj)
+
+            if raw_events and isinstance(raw_events, list):
                 logger.debug("📊 [Exa Research] Got events | count=%d", len(raw_events))
                 results = [
                     ExaSearchResult(
@@ -252,24 +271,37 @@ async def research_events_adapter(profile: Any) -> list[ExaSearchResult]:
         logger.warning("Exa research task failed to create")
         return []
 
-    # Poll for results (max 60 seconds)
-    max_polls = 12
+    # Poll for results (max 120 seconds for deep research)
+    max_polls = 24
     poll_interval = 5.0
 
-    for _ in range(max_polls):
+    for poll_num in range(max_polls):
         await asyncio.sleep(poll_interval)
 
         status = await client.get_task_status(task_id)
         if not status:
+            logger.debug("⏳ [Exa Research] Poll %d/%d | id=%s status=None", poll_num + 1, max_polls, task_id)
             continue
 
-        if status.status == "completed":
-            return status.results or []
-        elif status.status == "failed":
-            logger.warning("Exa research task %s failed", task_id)
+        logger.debug(
+            "⏳ [Exa Research] Poll %d/%d | id=%s status=%s results=%s",
+            poll_num + 1, max_polls, task_id, status.status,
+            len(status.results) if status.results else 0
+        )
+
+        # Check for completion - handle various status strings
+        if status.status in ("completed", "complete", "success", "done"):
+            if status.results:
+                logger.info("✅ [Exa Research] Task complete | id=%s events=%d", task_id, len(status.results))
+                return status.results
+            else:
+                logger.warning("⚠️ [Exa Research] Task complete but no results | id=%s", task_id)
+                return []
+        elif status.status in ("failed", "error"):
+            logger.warning("❌ [Exa Research] Task failed | id=%s", task_id)
             return []
 
-    logger.warning("Exa research task %s timed out", task_id)
+    logger.warning("⏰ [Exa Research] Task timed out after %ds | id=%s", int(max_polls * poll_interval), task_id)
     return []
 
 
