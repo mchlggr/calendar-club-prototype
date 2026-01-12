@@ -25,6 +25,7 @@ from api.services import (
     register_eventbrite_source,
     register_exa_source,
 )
+from api.services.exa_research import register_exa_research_source
 from api.services.firecrawl import register_posh_source
 from api.services.meetup import register_meetup_source
 from api.services.background_tasks import get_background_task_manager
@@ -47,6 +48,7 @@ register_eventbrite_source()
 # register_meetup_source()
 register_exa_source()
 register_posh_source()
+register_exa_research_source()
 
 
 def _safe_json_serialize(data: Any) -> str | None:

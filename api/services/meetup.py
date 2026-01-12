@@ -330,18 +330,26 @@ async def search_events_adapter(profile: SearchProfile) -> list[MeetupEvent]:
             else:
                 end_date = end_value
 
+    # Log the complete outbound query for debugging
+    latitude = 39.9612  # Columbus, OH
+    longitude = -82.9988
+    radius = 50
+
     logger.debug(
-        "🌐 [Meetup] Starting search | query=%s start=%s end=%s",
-        query[:50],
+        "📤 [Meetup] Outbound Query | query='%s' lat=%s lon=%s radius=%d start=%s end=%s",
+        query,
+        latitude,
+        longitude,
+        radius,
         start_date,
         end_date,
     )
 
     events = await client.search_events(
         query=query,
-        latitude=39.9612,  # Columbus, OH
-        longitude=-82.9988,
-        radius=50,
+        latitude=latitude,
+        longitude=longitude,
+        radius=radius,
         start_date=start_date,
         end_date=end_date,
         limit=15,

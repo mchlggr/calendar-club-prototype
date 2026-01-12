@@ -415,27 +415,68 @@ async def search_events_adapter(profile: Any) -> list[ScrapedEvent]:
     """
     Adapter for registry pattern - searches Posh using a SearchProfile.
     """
+    import time
+
     extractor = get_posh_extractor()
     city = "columbus"  # TODO: Extract from profile.location
 
+    # Extract time window for logging
+    start_date = None
+    end_date = None
+    if hasattr(profile, "time_window") and profile.time_window:
+        start_date = profile.time_window.start
+        end_date = profile.time_window.end
+
+    # Log the outbound query
+    logger.debug(
+        "📤 [Posh] Outbound Query | city='%s' start=%s end=%s free_only=%s",
+        city,
+        start_date,
+        end_date,
+        getattr(profile, "free_only", False),
+    )
+
+    start_time = time.perf_counter()
     events = await extractor.discover_events(city=city, limit=30)
+    fetch_elapsed = time.perf_counter() - start_time
+
+    logger.debug(
+        "📥 [Posh] Fetched | events=%d duration=%.2fs",
+        len(events),
+        fetch_elapsed,
+    )
 
     # Post-fetch filtering
     filtered_events = []
+    filtered_out_time = 0
+    filtered_out_price = 0
+
     for event in events:
         if hasattr(profile, "time_window") and profile.time_window:
             if profile.time_window.start and event.start_time:
                 if event.start_time < profile.time_window.start:
+                    filtered_out_time += 1
                     continue
             if profile.time_window.end and event.start_time:
                 if event.start_time > profile.time_window.end:
+                    filtered_out_time += 1
                     continue
 
         if hasattr(profile, "free_only") and profile.free_only:
             if not event.is_free:
+                filtered_out_price += 1
                 continue
 
         filtered_events.append(event)
+
+    # Log filtering results
+    if filtered_out_time > 0 or filtered_out_price > 0:
+        logger.debug(
+            "🔍 [Posh] Filtered | kept=%d removed_time=%d removed_price=%d",
+            len(filtered_events),
+            filtered_out_time,
+            filtered_out_price,
+        )
 
     return filtered_events
 

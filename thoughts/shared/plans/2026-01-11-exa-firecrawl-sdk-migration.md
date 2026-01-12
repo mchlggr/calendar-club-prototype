@@ -983,9 +983,9 @@ def register_exa_source() -> None:
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] `pip install -r requirements.txt` succeeds with exa-py
-- [ ] `pytest api/services/tests/test_live_sources.py -k "Exa" -m integration -v` passes
-- [ ] Import check: `python -c "from api.services.exa_client import get_exa_client; print('OK')"`
+- [x] `pip install -r requirements.txt` succeeds with exa-py
+- [x] `pytest api/services/tests/test_live_sources.py -k "Exa" -m integration -v` passes
+- [x] Import check: `python -c "from api.services.exa_client import get_exa_client; print('OK')"`
 
 #### Manual Verification:
 - [ ] Run search flow and verify Exa events appear in results
@@ -1261,9 +1261,9 @@ from api.services.exa_research import (
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Import check: `python -c "from api.services.exa_research import get_exa_research_client; print('OK')"`
-- [ ] All existing tests still pass
-- [ ] New source registers without errors
+- [x] Import check: `python -c "from api.services.exa_research import get_exa_research_client; print('OK')"`
+- [x] All existing tests still pass
+- [x] New source registers without errors
 
 #### Manual Verification:
 - [ ] Run search flow and verify Exa Research source appears in enabled sources

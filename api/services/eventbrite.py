@@ -459,6 +459,16 @@ async def search_events_adapter(profile: Any) -> list[EventbriteEvent]:
             else:
                 end_date = end_value
 
+    # Log the complete outbound query for debugging
+    logger.debug(
+        "📤 [Eventbrite] Outbound Query | location='%s' start=%s end=%s categories=%s free_only=%s",
+        location,
+        start_date,
+        end_date,
+        categories,
+        free_only,
+    )
+
     return await client.search_events(
         location=location,
         start_date=start_date,

@@ -1,8 +1,8 @@
 """
 Exa API client for event discovery.
 
-Provides async methods to search the web and fetch content via Exa's
-Search API and Websets API.
+Uses official exa-py SDK for Search API (wrapped in thread pool for async),
+and raw HTTP for Websets API (not supported by SDK).
 """
 
 import logging
@@ -12,7 +12,9 @@ from datetime import datetime
 from typing import Any
 
 import httpx
+from exa_py import Exa
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 logger = logging.getLogger(__name__)
 
@@ -40,31 +42,106 @@ class ExaWebset(BaseModel):
 
 
 class ExaClient:
-    """Async client for Exa API (Search + Websets)."""
+    """
+    Async client for Exa API.
+
+    Uses official SDK for Search API (sync SDK wrapped in thread pool).
+    Uses raw HTTP for Websets API (not supported by SDK).
+    """
 
     BASE_URL = "https://api.exa.ai"
 
     def __init__(self, api_key: str | None = None):
         self.api_key = api_key or os.getenv("EXA_API_KEY")
-        self._client: httpx.AsyncClient | None = None
+        self._sdk_client: Exa | None = None
+        self._http_client: httpx.AsyncClient | None = None
 
-    async def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None:
+    def _get_sdk_client(self) -> Exa:
+        """Get or create the SDK client (synchronous)."""
+        if self._sdk_client is None:
+            if not self.api_key:
+                raise ValueError("EXA_API_KEY not configured")
+            self._sdk_client = Exa(api_key=self.api_key)
+        return self._sdk_client
+
+    async def _get_http_client(self) -> httpx.AsyncClient:
+        """Get or create HTTP client for Websets (async)."""
+        if self._http_client is None:
             headers = {}
             if self.api_key:
                 headers["x-api-key"] = self.api_key
-            self._client = httpx.AsyncClient(
+            self._http_client = httpx.AsyncClient(
                 base_url=self.BASE_URL,
                 headers=headers,
                 timeout=30.0,
             )
-        return self._client
+        return self._http_client
 
     async def close(self) -> None:
         """Close the HTTP client."""
-        if self._client:
-            await self._client.aclose()
-            self._client = None
+        if self._http_client:
+            await self._http_client.aclose()
+            self._http_client = None
+
+    def _convert_sdk_result(self, result: Any) -> ExaSearchResult:
+        """Convert SDK result object to our model."""
+        published_date = None
+        if hasattr(result, 'published_date') and result.published_date:
+            try:
+                if isinstance(result.published_date, str):
+                    published_date = datetime.fromisoformat(
+                        result.published_date.replace("Z", "+00:00")
+                    )
+                else:
+                    published_date = result.published_date
+            except ValueError:
+                pass
+
+        return ExaSearchResult(
+            id=getattr(result, 'id', '') or getattr(result, 'url', ''),
+            title=getattr(result, 'title', 'Untitled'),
+            url=result.url,
+            score=getattr(result, 'score', None),
+            published_date=published_date,
+            author=getattr(result, 'author', None),
+            text=getattr(result, 'text', None),
+            highlights=getattr(result, 'highlights', None),
+        )
+
+    def _sync_search(
+        self,
+        query: str,
+        num_results: int,
+        include_text: bool,
+        include_highlights: bool,
+        start_published_date: str | None,
+        end_published_date: str | None,
+        include_domains: list[str] | None,
+        exclude_domains: list[str] | None,
+    ) -> list[Any]:
+        """Synchronous search using SDK (called via run_in_threadpool)."""
+        client = self._get_sdk_client()
+
+        kwargs: dict[str, Any] = {
+            "num_results": num_results,
+        }
+
+        if start_published_date:
+            kwargs["start_published_date"] = start_published_date
+        if end_published_date:
+            kwargs["end_published_date"] = end_published_date
+        if include_domains:
+            kwargs["include_domains"] = include_domains
+        if exclude_domains:
+            kwargs["exclude_domains"] = exclude_domains
+
+        # Use search_and_contents if we need text/highlights
+        if include_text or include_highlights:
+            result = client.search_and_contents(query, **kwargs)
+        else:
+            result = client.search(query, **kwargs)
+
+        return result.results if hasattr(result, 'results') else []
 
     async def search(
         self,
@@ -80,45 +157,11 @@ class ExaClient:
         """
         Search the web using Exa's neural search.
 
-        Args:
-            query: Search query (natural language)
-            num_results: Number of results to return
-            include_text: Include full text content
-            include_highlights: Include relevant text highlights
-            start_published_date: Filter results published after this date
-            end_published_date: Filter results published before this date
-            include_domains: Only include results from these domains
-            exclude_domains: Exclude results from these domains
-
-        Returns:
-            List of ExaSearchResult objects
+        Uses SDK wrapped in thread pool for async compatibility.
         """
         if not self.api_key:
             logger.warning("EXA_API_KEY not set, returning empty results")
             return []
-
-        client = await self._get_client()
-
-        payload: dict[str, Any] = {
-            "query": query,
-            "numResults": num_results,
-            "contents": {},
-        }
-
-        if include_text:
-            payload["contents"]["text"] = True
-        if include_highlights:
-            payload["contents"]["highlights"] = True
-
-        if start_published_date:
-            payload["startPublishedDate"] = start_published_date.strftime("%Y-%m-%d")
-        if end_published_date:
-            payload["endPublishedDate"] = end_published_date.strftime("%Y-%m-%d")
-
-        if include_domains:
-            payload["includeDomains"] = include_domains
-        if exclude_domains:
-            payload["excludeDomains"] = exclude_domains
 
         try:
             logger.debug(
@@ -128,15 +171,24 @@ class ExaClient:
             )
             start_time = time.perf_counter()
 
-            response = await client.post("/search", json=payload)
-            response.raise_for_status()
-            data = response.json()
+            # Format dates for SDK
+            start_date_str = start_published_date.strftime("%Y-%m-%d") if start_published_date else None
+            end_date_str = end_published_date.strftime("%Y-%m-%d") if end_published_date else None
 
-            results = []
-            for result_data in data.get("results", []):
-                result = self._parse_search_result(result_data)
-                if result:
-                    results.append(result)
+            # Run sync SDK in thread pool
+            raw_results = await run_in_threadpool(
+                self._sync_search,
+                query,
+                num_results,
+                include_text,
+                include_highlights,
+                start_date_str,
+                end_date_str,
+                include_domains,
+                exclude_domains,
+            )
+
+            results = [self._convert_sdk_result(r) for r in raw_results]
 
             elapsed = time.perf_counter() - start_time
             if results:
@@ -146,21 +198,35 @@ class ExaClient:
                     elapsed,
                 )
             else:
-                logger.debug(
-                    "📭 [Exa] No results | duration=%.2fs",
-                    elapsed,
-                )
+                logger.debug("📭 [Exa] No results | duration=%.2fs", elapsed)
+
             return results
 
-        except httpx.HTTPError as e:
-            elapsed = time.perf_counter() - start_time if 'start_time' in locals() else 0
-            logger.debug(
-                "❌ [Exa] HTTP error | error=%s duration=%.2fs",
-                str(e)[:100],
-                elapsed,
-            )
-            logger.warning("Exa search API error: %s", e)
+        except Exception as e:
+            logger.warning("Exa search error: %s", e)
             return []
+
+    def _sync_find_similar(
+        self,
+        url: str,
+        num_results: int,
+        include_text: bool,
+        exclude_source_domain: bool,
+    ) -> list[Any]:
+        """Synchronous find_similar using SDK."""
+        client = self._get_sdk_client()
+
+        kwargs: dict[str, Any] = {
+            "num_results": num_results,
+            "exclude_source_domain": exclude_source_domain,
+        }
+
+        if include_text:
+            result = client.find_similar_and_contents(url, **kwargs)
+        else:
+            result = client.find_similar(url, **kwargs)
+
+        return result.results if hasattr(result, 'results') else []
 
     async def find_similar(
         self,
@@ -169,44 +235,28 @@ class ExaClient:
         include_text: bool = True,
         exclude_source_domain: bool = True,
     ) -> list[ExaSearchResult]:
-        """
-        Find pages similar to a given URL.
-
-        Args:
-            url: URL to find similar pages for
-            num_results: Number of results to return
-            include_text: Include full text content
-            exclude_source_domain: Exclude results from the source domain
-
-        Returns:
-            List of ExaSearchResult objects
-        """
+        """Find pages similar to a given URL."""
         if not self.api_key:
             return []
 
-        client = await self._get_client()
-
-        payload: dict[str, Any] = {
-            "url": url,
-            "numResults": num_results,
-            "excludeSourceDomain": exclude_source_domain,
-            "contents": {"text": include_text},
-        }
-
         try:
-            response = await client.post("/findSimilar", json=payload)
-            response.raise_for_status()
-            data = response.json()
+            raw_results = await run_in_threadpool(
+                self._sync_find_similar,
+                url,
+                num_results,
+                include_text,
+                exclude_source_domain,
+            )
 
-            return [
-                result
-                for result_data in data.get("results", [])
-                if (result := self._parse_search_result(result_data))
-            ]
+            return [self._convert_sdk_result(r) for r in raw_results]
 
-        except httpx.HTTPError as e:
-            logger.warning("Exa findSimilar API error: %s", e)
+        except Exception as e:
+            logger.warning("Exa findSimilar error: %s", e)
             return []
+
+    # ========================================
+    # Websets API (raw HTTP - SDK doesn't support)
+    # ========================================
 
     async def create_webset(
         self,
@@ -217,21 +267,12 @@ class ExaClient:
         """
         Create a Webset for async deep discovery.
 
-        Websets gather comprehensive results over time, useful for
-        discovering many events matching specific criteria.
-
-        Args:
-            query: Natural language search query
-            count: Target number of results to gather
-            criteria: Additional filtering criteria
-
-        Returns:
-            Webset ID if created successfully, None otherwise
+        NOTE: Uses raw HTTP because SDK doesn't expose Websets API.
         """
         if not self.api_key:
             return None
 
-        client = await self._get_client()
+        client = await self._get_http_client()
 
         payload: dict[str, Any] = {
             "query": query,
@@ -265,16 +306,12 @@ class ExaClient:
         """
         Get the status and results of a Webset.
 
-        Args:
-            webset_id: The Webset ID from create_webset()
-
-        Returns:
-            ExaWebset with status and results if available
+        NOTE: Uses raw HTTP because SDK doesn't expose Websets API.
         """
         if not self.api_key:
             return None
 
-        client = await self._get_client()
+        client = await self._get_http_client()
 
         try:
             logger.debug("⏳ [Exa] Polling Webset | id=%s", webset_id)
@@ -287,7 +324,7 @@ class ExaClient:
                 results = [
                     result
                     for result_data in data["results"]
-                    if (result := self._parse_search_result(result_data))
+                    if (result := self._parse_webset_result(result_data))
                 ]
 
             status = data.get("status", "unknown")
@@ -310,8 +347,8 @@ class ExaClient:
             logger.warning("Exa get webset error: %s", e)
             return None
 
-    def _parse_search_result(self, data: dict[str, Any]) -> ExaSearchResult | None:
-        """Parse raw Exa API response into ExaSearchResult."""
+    def _parse_webset_result(self, data: dict[str, Any]) -> ExaSearchResult | None:
+        """Parse raw Webset result into ExaSearchResult."""
         try:
             published_date = None
             if data.get("publishedDate"):
@@ -334,7 +371,7 @@ class ExaClient:
             )
 
         except (KeyError, ValueError) as e:
-            logger.warning("Error parsing Exa result: %s", e)
+            logger.warning("Error parsing Exa webset result: %s", e)
             return None
 
 
@@ -350,9 +387,45 @@ def get_exa_client() -> ExaClient:
     return _client
 
 
+def _format_date_range_for_query(time_window: Any) -> str:
+    """
+    Format a time window as natural language for neural search.
+
+    Examples:
+        - "happening January 15-20, 2026"
+        - "happening January 15, 2026"
+        - "happening in January 2026"
+    """
+    if not time_window:
+        return ""
+
+    start = time_window.start
+    end = time_window.end
+
+    if not start:
+        return ""
+
+    # Format depends on whether we have a range or single date
+    if end and start.date() != end.date():
+        # Date range
+        if start.month == end.month and start.year == end.year:
+            # Same month: "January 15-20, 2026"
+            return f"happening {start.strftime('%B')} {start.day}-{end.day}, {start.year}"
+        else:
+            # Different months: "January 15 - February 2, 2026"
+            return f"happening {start.strftime('%B %d')} - {end.strftime('%B %d, %Y')}"
+    else:
+        # Single date or same day: "January 15, 2026"
+        return f"happening {start.strftime('%B %d, %Y')}"
+
+
 async def search_events_adapter(profile: Any) -> list[ExaSearchResult]:
     """
     Adapter for registry pattern - searches Exa using a SearchProfile.
+
+    Uses natural language query construction for Exa's neural search.
+    Date ranges are included IN the query text (not as API filters) because
+    Exa's date filters are for page publication date, not event date.
 
     Args:
         profile: SearchProfile with search criteria
@@ -362,46 +435,46 @@ async def search_events_adapter(profile: Any) -> list[ExaSearchResult]:
     """
     client = get_exa_client()
 
-    # Build search query from profile
-    query_parts = ["events", "Columbus Ohio"]
+    # Build search query with natural language for neural search
+    query_parts = []
 
+    # Add event type and location context
+    query_parts.append("events in Columbus, Ohio")
+
+    # Add date range as natural language (CRITICAL for grounding)
+    if hasattr(profile, "time_window") and profile.time_window:
+        date_text = _format_date_range_for_query(profile.time_window)
+        if date_text:
+            query_parts.append(date_text)
+
+    # Add categories
     if hasattr(profile, "categories") and profile.categories:
         query_parts.extend(profile.categories)
 
+    # Add keywords
     if hasattr(profile, "keywords") and profile.keywords:
         query_parts.extend(profile.keywords)
 
-    # Add time context
-    if hasattr(profile, "time_window") and profile.time_window:
-        if profile.time_window.start:
-            query_parts.append(profile.time_window.start.strftime("%B %Y"))
-
     query = " ".join(query_parts)
 
-    # Set date filters
-    start_date = None
-    end_date = None
-    if hasattr(profile, "time_window") and profile.time_window:
-        start_date = profile.time_window.start
-        end_date = profile.time_window.end
+    # Log the complete outbound query for debugging
+    logger.debug(
+        "📤 [Exa] Outbound Query | query='%s' num_results=%d",
+        query,
+        10,
+    )
 
-    # Include domains known for events
-    include_domains = [
-        "eventbrite.com",
-        "meetup.com",
-        "lu.ma",
-        "posh.vip",
-        "facebook.com/events",
-    ]
+    # NOTE: We intentionally do NOT use start_published_date/end_published_date
+    # because those filter by when a PAGE was published, not when an EVENT occurs.
+    # Instead, we include the date range in the natural language query above.
 
     return await client.search(
         query=query,
         num_results=10,
         include_text=True,
         include_highlights=True,
-        start_published_date=start_date,
-        end_published_date=end_date,
-        include_domains=include_domains,
+        # No date filters - they filter page publication, not event dates
+        # No domain restrictions - let Exa search broadly for events
     )
 
 
