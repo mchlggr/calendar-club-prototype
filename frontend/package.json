@@ -4,7 +4,6 @@
   "private": true,
   "scripts": {
     "dev": "npx @react-grab/claude-code@latest & next dev",
-    "dev:grab": "npx grab start localhost:3000 -p 2000",
     "build": "next build",
     "start": "next start",
     "lint": "biome check src",
