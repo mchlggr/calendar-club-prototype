@@ -169,38 +169,54 @@ class ExaResearchClient:
 
             results = None
 
-            # SDK returns nested structure: result.output.events
-            # First get the output object, then get events from it
+            # SDK returns nested structure: result.output.parsed['events']
+            # ResearchOutput has: content (JSON string), parsed (dict with events)
             output_obj = getattr(result, 'output', None)
             raw_events = None
 
             if output_obj is not None:
-                # output_obj is a ResearchOutput with an 'events' attribute
-                if hasattr(output_obj, 'events'):
-                    raw_events = output_obj.events
-                elif isinstance(output_obj, dict):
-                    raw_events = output_obj.get('events')
-                logger.debug("📦 [Exa Research] Output object | type=%s events=%s", type(output_obj).__name__, type(raw_events).__name__ if raw_events else None)
+                # First try: output_obj.parsed['events'] (the actual structure)
+                parsed = getattr(output_obj, 'parsed', None)
+                if parsed and isinstance(parsed, dict):
+                    raw_events = parsed.get('events')
+                    logger.debug("📦 [Exa Research] Parsed output | events=%d", len(raw_events) if raw_events else 0)
 
-            # Fallback: check direct attributes
+                # Fallback: direct events attribute
+                if not raw_events and hasattr(output_obj, 'events'):
+                    raw_events = output_obj.events
+
+            # Fallback: check direct attributes on result
             if not raw_events:
                 raw_events = getattr(result, 'events', None) or getattr(result, 'results', None)
 
-            # Log raw response when completed but no events found
-            if status in ('completed', 'complete', 'success', 'done') and not raw_events:
-                logger.warning("🔍 [Exa Research] Completed but no events | output_obj=%s", output_obj)
-
             if raw_events and isinstance(raw_events, list):
                 logger.debug("📊 [Exa Research] Got events | count=%d", len(raw_events))
-                results = [
-                    ExaSearchResult(
-                        id=getattr(r, 'url', '') or getattr(r, 'id', ''),
-                        title=getattr(r, 'title', 'Untitled'),
-                        url=getattr(r, 'url', ''),
-                        text=getattr(r, 'description', None) or getattr(r, 'text', None),
-                    )
-                    for r in raw_events
-                ]
+                results = []
+                for r in raw_events:
+                    # Handle both dict and object responses
+                    if isinstance(r, dict):
+                        event = ExaSearchResult(
+                            id=r.get('url', '') or r.get('id', ''),
+                            title=r.get('title', 'Untitled'),
+                            url=r.get('url', ''),
+                            text=r.get('description'),
+                            # Store extra fields in extracted_event for downstream use
+                            extracted_event={
+                                'start_date': r.get('start_date'),
+                                'start_time': r.get('start_time'),
+                                'venue_name': r.get('venue_name'),
+                                'venue_address': r.get('venue_address'),
+                                'price': r.get('price'),
+                            }
+                        )
+                    else:
+                        event = ExaSearchResult(
+                            id=getattr(r, 'url', '') or getattr(r, 'id', ''),
+                            title=getattr(r, 'title', 'Untitled'),
+                            url=getattr(r, 'url', ''),
+                            text=getattr(r, 'description', None) or getattr(r, 'text', None),
+                        )
+                    results.append(event)
 
             return ExaResearchResult(
                 task_id=task_id,

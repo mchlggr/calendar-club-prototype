@@ -108,6 +108,8 @@ export function DiscoveryChat({
 			streamingMessageRef.current = "";
 			hasProcessedDoneRef.current = false;
 			pendingResultsRef.current = [];
+			// Clear stale events from previous response before showing thinking state
+			setPendingResults([]);
 			setIsProcessing(true);
 			setIsSearching(false);
 			// Hide quick picks while processing

@@ -10,7 +10,7 @@ import hashlib
 import logging
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 from agents import Agent, function_tool
@@ -59,7 +59,55 @@ def _convert_exa_result(result: ExaSearchResult) -> EventResult | None:
     if not result.url:
         return None
 
-    # Skip results without dates
+    # Check for extracted_event (from exa-research) first
+    extracted = result.extracted_event
+    if extracted:
+        # Research results have structured event data
+        start_date_str = extracted.get('start_date')
+        if not start_date_str:
+            logger.debug(
+                "⏭️ [Search] Skipping Exa research result without date | title=%s",
+                result.title[:50] if result.title else "untitled",
+            )
+            return None
+
+        # Parse date string like "January 15, 2026" to ISO format with timezone
+        try:
+            from dateutil import parser as date_parser
+            parsed_date = date_parser.parse(start_date_str)
+            # Add UTC timezone if naive (required for downstream validation)
+            if parsed_date.tzinfo is None:
+                parsed_date = parsed_date.replace(tzinfo=timezone.utc)
+            date_str = parsed_date.isoformat()
+        except Exception:
+            # Fall back to using the string as-is
+            date_str = start_date_str
+
+        event_id = hashlib.md5(result.url.encode()).hexdigest()[:12]
+
+        # Build location from venue data
+        venue_name = extracted.get('venue_name') or ''
+        venue_address = extracted.get('venue_address') or ''
+        location = f"{venue_name}, {venue_address}".strip(', ') or "Columbus, OH"
+
+        # Check if free
+        price_str = extracted.get('price', '')
+        is_free = price_str.lower() in ('free', '') if price_str else False
+
+        return EventResult(
+            id=f"exa-research-{event_id}",
+            title=result.title or "Untitled Event",
+            date=date_str,
+            location=location,
+            category="community",
+            description=result.text or "",
+            is_free=is_free,
+            price_amount=None,
+            distance_miles=10.0,
+            url=result.url,
+        )
+
+    # Fall back to regular Exa search result handling
     if not result.published_date:
         logger.debug(
             "⏭️ [Search] Skipping Exa result without date | title=%s url=%s",
@@ -240,12 +288,13 @@ def _validate_event(event: EventResult) -> EventResult | None:
             )
             return None
 
-    except ValueError:
-        logger.debug(
-            "Filtered event: unparseable date | id=%s title=%s date=%s",
+    except Exception as e:
+        logger.warning(
+            "Filtered event: unparseable date | id=%s title=%s date=%s error=%s",
             event.id,
             event.title,
             event.date,
+            str(e),
         )
         return None
 
@@ -401,15 +450,18 @@ def _convert_source_results(
             converted: EventResult | None = None
             if source_name == "eventbrite" and isinstance(result, EventbriteEvent):
                 converted = _convert_eventbrite_event(result)
-            elif source_name == "exa" and isinstance(result, ExaSearchResult):
+            elif source_name in ("exa", "exa-research") and isinstance(result, ExaSearchResult):
                 converted = _convert_exa_result(result)
             elif source_name == "posh" and isinstance(result, ScrapedEvent):
                 converted = _convert_scraped_event(result)
             elif source_name == "meetup" and isinstance(result, MeetupEvent):
                 converted = _convert_meetup_event(result)
             else:
-                # Unknown source type - skip
-                logger.debug("Skipping unknown result type from %s", source_name)
+                # Unknown source type - log details for debugging
+                logger.warning(
+                    "Skipping unknown result type from %s | type=%s value=%s",
+                    source_name, type(result).__name__, result
+                )
                 continue
 
             # Filter out None results (events without dates)
