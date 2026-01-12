@@ -1,0 +1,29 @@
+# Beads issue tracking (contains socket files)
+.beads/
+
+# Development files
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.idea/
+.cursor/
+.zed/
+
+# Local env
+.env
+.env.local
+
+# Git
+.git/
+
+# Docs/notes (not needed in deploy)
+thoughts/
+throughts/
+docs/
+*.md
+!README.md
