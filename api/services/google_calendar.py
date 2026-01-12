@@ -3,6 +3,9 @@ Google Calendar OAuth and API integration service.
 
 Provides OAuth flow for Google Calendar and methods to create events
 in user's Google Calendar.
+
+Uses direct REST API calls via httpx instead of google-api-python-client
+to reduce bundle size (~92MB savings).
 """
 
 import json
@@ -11,13 +14,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 from pydantic import BaseModel, Field
 
 from api.config import get_settings
+
+# Google Calendar API base URL
+CALENDAR_API_BASE = "https://www.googleapis.com/calendar/v3"
 
 logger = logging.getLogger(__name__)
 
@@ -208,6 +213,14 @@ class GoogleCalendarService:
             return True
         return False
 
+    def _refresh_credentials_if_needed(self, credentials: Credentials) -> Credentials:
+        """Refresh credentials if expired."""
+        if credentials.expired and credentials.refresh_token:
+            import google.auth.transport.requests
+            request = google.auth.transport.requests.Request()
+            credentials.refresh(request)
+        return credentials
+
     def create_event(
         self,
         user_id: str,
@@ -226,14 +239,14 @@ class GoogleCalendarService:
 
         Raises:
             ValueError: If user has no valid credentials
-            HttpError: If Google API call fails
+            httpx.HTTPStatusError: If Google API call fails
         """
         credentials = self._load_credentials(user_id)
         if credentials is None:
             raise ValueError(f"No credentials found for user: {user_id}")
 
-        # Build the service
-        service = build("calendar", "v3", credentials=credentials)
+        # Refresh token if needed
+        credentials = self._refresh_credentials_if_needed(credentials)
 
         # Build event body
         event_body: dict[str, Any] = {
@@ -265,19 +278,23 @@ class GoogleCalendarService:
         if event.location:
             event_body["location"] = event.location
 
+        # Use direct REST API call instead of google-api-python-client
+        url = f"{CALENDAR_API_BASE}/calendars/{calendar_id}/events"
+        headers = {"Authorization": f"Bearer {credentials.token}"}
+
         try:
-            created_event = (
-                service.events()
-                .insert(calendarId=calendar_id, body=event_body)
-                .execute()
-            )
+            with httpx.Client() as client:
+                response = client.post(url, headers=headers, json=event_body)
+                response.raise_for_status()
+                created_event = response.json()
+
             logger.info(
                 "Created Google Calendar event '%s' for user %s",
                 event.summary,
                 user_id,
             )
             return created_event
-        except HttpError as e:
+        except httpx.HTTPStatusError as e:
             logger.error(
                 "Failed to create Google Calendar event for user %s: %s",
                 user_id,
@@ -306,7 +323,7 @@ class GoogleCalendarService:
             try:
                 result = self.create_event(user_id, event, calendar_id)
                 results.append(result)
-            except HttpError as e:
+            except httpx.HTTPStatusError as e:
                 logger.warning(
                     "Failed to create event '%s': %s",
                     event.summary,

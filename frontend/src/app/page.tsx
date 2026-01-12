@@ -32,7 +32,6 @@ export default function Home() {
 				{/* Hero Section */}
 				<div className="mb-8">
 					<Hero />
-					<PaperQuote className="mt-6" />
 				</div>
 
 				{/* Discovery Chat */}

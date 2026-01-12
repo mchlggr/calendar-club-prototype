@@ -85,16 +85,13 @@ def _parse_datetime(
         return None
 
     try:
-        import dateparser
+        from dateutil import parser as dateutil_parser
 
         combined = date_str
         if time_str:
             combined = f"{date_str} {time_str}"
 
-        return dateparser.parse(
-            combined,
-            settings={"PREFER_DATES_FROM": "future"},
-        )
+        return dateutil_parser.parse(combined, fuzzy=True)
     except Exception:
         return None
 

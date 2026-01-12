@@ -1,15 +1,16 @@
 """
 TemporalParser for natural language date/time expressions.
 
-Uses dateparser library with custom handlers for range expressions
+Uses python-dateutil with custom handlers for range expressions
 like "this weekend", "tonight", "tomorrow night".
 """
 
 from datetime import datetime, timedelta
-from typing import Any, Callable, TypedDict, cast
+from typing import Any, Callable, TypedDict
 from zoneinfo import ZoneInfo
 
-import dateparser
+from dateutil import parser as dateutil_parser
+from dateutil.parser import ParserError
 
 
 class TemporalResult(TypedDict, total=False):
@@ -51,8 +52,14 @@ class TemporalParser:
             if phrase in user_input_lower:
                 return handler()
 
-        # Fall back to dateparser
-        result = dateparser.parse(user_input, settings=cast(Any, self.settings))
+        # Fall back to python-dateutil
+        try:
+            result = dateutil_parser.parse(user_input, fuzzy=True)
+            # Make timezone-aware if not already
+            if result.tzinfo is None:
+                result = result.replace(tzinfo=self.tz)
+        except (ParserError, ValueError):
+            result = None
 
         if result:
             return {

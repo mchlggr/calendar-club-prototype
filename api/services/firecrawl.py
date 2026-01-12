@@ -270,28 +270,22 @@ class BaseExtractor(ABC):
             return None, None
 
         try:
-            import dateparser
             from datetime import timedelta
+
+            from dateutil import parser as dateutil_parser
 
             # Combine date and start time
             combined = start_date
             if start_time:
-                # Remove timezone abbreviation for parsing (dateparser handles it)
                 combined = f"{start_date} {start_time}"
 
-            start_dt = dateparser.parse(
-                combined,
-                settings={"PREFER_DATES_FROM": "future"},
-            )
+            start_dt = dateutil_parser.parse(combined, fuzzy=True)
 
             # Parse end time if provided
             end_dt = None
             if end_time and start_dt:
                 end_combined = f"{start_date} {end_time}"
-                end_dt = dateparser.parse(
-                    end_combined,
-                    settings={"PREFER_DATES_FROM": "future"},
-                )
+                end_dt = dateutil_parser.parse(end_combined, fuzzy=True)
                 # Handle overnight events (end time before start time)
                 if end_dt and start_dt and end_dt < start_dt:
                     end_dt = end_dt + timedelta(days=1)

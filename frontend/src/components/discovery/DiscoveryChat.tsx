@@ -316,7 +316,7 @@ export function DiscoveryChat({
 	return (
 		<div
 			className={cn(
-				"flex flex-col gap-6 rounded-xl border border-border-light bg-bg-white p-6 shadow-md",
+				"flex flex-col gap-6 rounded-xl border border-border-light bg-grid-paper p-6 shadow-md",
 				className,
 			)}
 		>

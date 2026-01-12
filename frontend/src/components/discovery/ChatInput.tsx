@@ -14,7 +14,7 @@ interface ChatInputProps {
 
 export function ChatInput({
 	onSubmit,
-	placeholder = "Search events...",
+	placeholder = "Find events and meetups, then download a calendar file for your week",
 	defaultValue = "",
 	disabled = false,
 	className,

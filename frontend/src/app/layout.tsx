@@ -3,9 +3,11 @@ import {
 	Instrument_Serif,
 	Inter,
 	JetBrains_Mono,
+	Nunito,
 	Permanent_Marker,
 	Tilt_Warp,
 } from "next/font/google";
+import Script from "next/script";
 import { Suspense } from "react";
 import "@/styles/globals.css";
 import { Footer } from "@/components/layout/Footer";
@@ -41,6 +43,12 @@ const tiltWarp = Tilt_Warp({
 	subsets: ["latin"],
 });
 
+const nunito = Nunito({
+	variable: "--font-nunito",
+	subsets: ["latin"],
+	weight: ["700", "800", "900"],
+});
+
 export const metadata: Metadata = {
 	title: "Calendar Club",
 	description:
@@ -56,8 +64,22 @@ export default function RootLayout({
 }>) {
 	return (
 		<html lang="en">
+			<head>
+				{process.env.NODE_ENV === "development" && (
+					<>
+						<Script
+							src="//unpkg.com/react-grab/dist/index.global.js"
+							strategy="beforeInteractive"
+						/>
+						<Script
+							src="//unpkg.com/@react-grab/claude-code/dist/client.global.js"
+							strategy="lazyOnload"
+						/>
+					</>
+				)}
+			</head>
 			<body
-				className={`${inter.variable} ${jetbrainsMono.variable} ${permanentMarker.variable} ${instrumentSerif.variable} ${tiltWarp.variable} min-h-screen bg-bg-cream font-sans antialiased`}
+				className={`${inter.variable} ${jetbrainsMono.variable} ${permanentMarker.variable} ${instrumentSerif.variable} ${tiltWarp.variable} ${nunito.variable} min-h-screen bg-page font-sans antialiased`}
 			>
 				<Suspense fallback={null}>
 					<PostHogProvider>

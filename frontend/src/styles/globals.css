@@ -77,8 +77,8 @@
   --font-jetbrains-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
     "Liberation Mono", "Courier New", monospace;
   --font-instrument-serif: Georgia, "Times New Roman", serif;
-  --font-logo: ui-sans-serif, system-ui, sans-serif;
-  --font-hand: ui-sans-serif, system-ui, sans-serif;
+  --font-logo: var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
+  --font-hand: var(--font-marker), ui-sans-serif, system-ui, sans-serif;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -160,6 +160,7 @@
   /* Brand fonts */
   .font-logo {
     font-family: var(--font-logo);
+    font-weight: 800;
   }
 
   .font-hand {
@@ -226,7 +227,7 @@
 
   /* Handwritten quote text inside highlight boxes */
   .highlight-quote {
-    font-family: var(--font-hand);
+    font-family: var(--font-marker), cursive;
     font-size: 18px;
     line-height: 1.35;
     color: var(--color-text-primary);

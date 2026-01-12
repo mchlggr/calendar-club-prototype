@@ -10,9 +10,10 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any, cast
+from typing import Any
 
-import dateparser
+from dateutil import parser as dateutil_parser
+from dateutil.parser import ParserError
 from pydantic import BaseModel
 from zoneinfo import ZoneInfo
 
@@ -88,8 +89,14 @@ class TemporalParser:
         if next_day_result:
             return next_day_result
 
-        # Fall back to dateparser for other expressions
-        result = dateparser.parse(user_input, settings=cast(Any, self.settings))
+        # Fall back to python-dateutil for other expressions
+        try:
+            result = dateutil_parser.parse(user_input, fuzzy=True)
+            # Make timezone-aware if not already
+            if result.tzinfo is None:
+                result = result.replace(tzinfo=self.tz)
+        except (ParserError, ValueError):
+            result = None
 
         if result:
             return TemporalResult(

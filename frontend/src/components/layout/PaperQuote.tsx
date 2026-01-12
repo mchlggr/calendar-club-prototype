@@ -8,13 +8,17 @@ interface PaperQuoteProps {
 export function PaperQuote({ className, children }: PaperQuoteProps) {
 	return (
 		<div
-			className={cn("paper-quote inline-block max-w-md rounded-sm", className)}
+			className={cn(
+				"highlight-box tape-accent inline-block max-w-md",
+				className,
+			)}
+			style={{ "--cc-rotate": "1.5deg" } as React.CSSProperties}
 		>
-			<p className="font-marker text-lg leading-relaxed text-text-primary md:text-xl">
+			<p className="highlight-quote">
 				{children || (
 					<>
-						&ldquo;Find events and meetups, then download a calendar file for
-						your week.&rdquo;
+						&ldquo;Deep research search for events,<br/>
+						synced to your calendar.&rdquo;
 					</>
 				)}
 			</p>

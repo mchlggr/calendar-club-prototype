@@ -57,8 +57,8 @@ logger = logging.getLogger(__name__)
 # register_meetup_scraper_source()
 # register_facebook_source()
 # register_river_source()
-# register_exa_research_source()
-register_firecrawl_agent_source()
+register_exa_research_source()
+# register_firecrawl_agent_source()
 
 
 def _format_user_error(error: Exception) -> str:
